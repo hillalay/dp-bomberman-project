@@ -1,7 +1,7 @@
-from game.game import Game
+from core.game import Game
 
 def main():
-    game = Game(width=800, height=600)
+    game = Game()
     game.run()
 
 if __name__ == "__main__":
