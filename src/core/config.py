@@ -42,8 +42,9 @@ class GameConfig:
         self.THEMES = {
              "forest": {
                 # Çim: daha parlak, Bomberman'a yakın
-                "bg": (84, 160, 60),      # ana ton
-                "bg_alt": (74, 148, 52),  # ikinci ton
+                "bg": (46, 126, 2),      # ana ton
+                "bg_alt": (46, 126, 2),
+                
 
                 # UNBREAKABLE taş duvarlar (açık gri)
                 "solid_wall": (205, 205, 215),

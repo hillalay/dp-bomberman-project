@@ -11,7 +11,7 @@ class Renderer:
         self.config = GameConfig.get_instance()
 
     def draw_world(self, world):
-        # 1) Zemin (checker pattern çim)
+        # 1) Zemin
         self._draw_grass_background()
 
         # 2) Duvarlar
@@ -26,19 +26,18 @@ class Renderer:
         if world.player is not None:
             world.player.draw(self.screen)
 
-        # 5) Patlamalar (ileride)
+        # 5) Patlamalar (ileride eklenecek)
         explosions = getattr(world, "explosions", [])
         for exp in explosions:
             exp.draw(self.screen)
 
     def _draw_grass_background(self):
         """
-        Bomberman'deki gibi hafif desenli çim zemini.
-        Tema paletindeki bg / bg_alt renklerini kullanıyoruz.
+        Tek renk çim zemini — hiçbir desen yok.
+        Renk: theme["bg"]
         """
         theme = self.config.THEMES[self.config.THEME]
-        base = theme["bg"]
-        alt = theme["bg_alt"]
+        base = theme["bg"]  # örn: (46, 126, 2)
 
         tile = self.config.TILE_SIZE
         cols = self.config.GRID_WIDTH
@@ -47,5 +46,4 @@ class Renderer:
         for y in range(rows):
             for x in range(cols):
                 rect = pygame.Rect(x * tile, y * tile, tile, tile)
-                color = base if (x + y) % 2 == 0 else alt
-                pygame.draw.rect(self.screen, color, rect)
+                pygame.draw.rect(self.screen, base, rect)
