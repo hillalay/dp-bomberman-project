@@ -40,11 +40,11 @@ class GameConfig:
         # Tema paletleri
         # -------------------------
         self.THEMES = {
-             "forest": {
-                # Çim: daha parlak, Bomberman'a yakın
-                "bg": (46, 126, 2),      # ana ton
-                "bg_alt": (46, 126, 2),
-                
+                 "forest": {
+                # Toprak rengi arkaplan
+                "bg": (130, 90, 50),     # kahverengi toprak
+                "bg_alt": (130, 90, 50), # tek renk kullanıyoruz
+                            
 
                 # UNBREAKABLE taş duvarlar (açık gri)
                 "solid_wall": (205, 205, 215),

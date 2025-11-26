@@ -134,7 +134,40 @@ class World:
         )
         self.bombs.append(bomb)
 
-    def handle_explosion(self, bomb):
-        if bomb in self.bombs:
-            self.bombs.remove(bomb)
-        # İleride: breakable/hard duvarları kırma, damage vs.
+        def handle_explosion(self, bomb, tiles=None):
+            """
+            - bomb: patlayan bomba objesi
+            - tiles: patlamadan etkilenen grid koordinatları [(gx, gy), ...]
+            """
+            ts = self.config.TILE_SIZE
+
+            # tiles gelmediyse fallback: sadece bombanın olduğu tile
+            if tiles is None:
+                gx = bomb.rect.x // ts
+                gy = bomb.rect.y // ts
+                tiles = [(gx, gy)]
+
+            # 1) BREAKABLE duvarları bul
+            destroyed_walls = []
+
+            for wall in list(self.walls):  # kopya üzerinden dön, silerken patlamasın
+                # sadece kırılabilir duvarlar
+                if getattr(wall, "wall_type", None) != WallType.BREAKABLE:
+                    continue
+
+                wx = wall.rect.x // ts
+                wy = wall.rect.y // ts
+
+                if (wx, wy) in tiles:
+                    destroyed_walls.append(wall)
+
+            # 2) Bulduğumuz duvarları dünyadan sil
+            for wall in destroyed_walls:
+                if wall in self.walls:
+                    self.walls.remove(wall)
+
+            # 3) Bombayı bombs listesinden sil
+            if bomb in self.bombs:
+                self.bombs.remove(bomb)
+
+            # İleride: player/enemy damage vs. buraya gelir

@@ -1,12 +1,139 @@
 import pygame
 from enum import Enum, auto
+from dataclasses import dataclass
+from typing import Callable, Dict, Any, List, Tuple, DefaultDict
+from collections import defaultdict
+from abc import ABC, abstractmethod
 
+
+# ====================================================
+# EVENT SYSTEM (Observer / Mediator)
+# ====================================================
+
+class EventType(Enum):
+    BOMB_PLACED = auto()
+    BOMB_EXPLODED = auto()
+    WALL_DESTROYED = auto()
+
+
+@dataclass
+class Event:
+    type: EventType
+    payload: Dict[str, Any] | None = None
+
+
+Listener = Callable[[Event], None]
+
+
+class EventBus:
+    """
+    Basit global EventBus.
+    - subscribe(event_type, listener)
+    - publish(Event)
+    """
+    _subscribers: DefaultDict[EventType, List[Listener]] = defaultdict(list)
+
+    @classmethod
+    def subscribe(cls, event_type: EventType, listener: Listener) -> None:
+        cls._subscribers[event_type].append(listener)
+
+    @classmethod
+    def unsubscribe(cls, event_type: EventType, listener: Listener) -> None:
+        if listener in cls._subscribers[event_type]:
+            cls._subscribers[event_type].remove(listener)
+
+    @classmethod
+    def publish(cls, event: Event) -> None:
+        for listener in list(cls._subscribers.get(event.type, [])):
+            listener(event)
+
+
+# ====================================================
+# EXPLOSION STRATEGY (Strategy Pattern)
+# ====================================================
+
+GridPos = Tuple[int, int]
+
+
+class ExplosionStrategy(ABC):
+    """
+    Patlamanın hangi tile'lara yayılacağını hesaplayan arayüz.
+    İleride:
+      - NormalExplosionStrategy
+      - LongRangeExplosion
+      - PierceExplosion
+    gibi varyantlar buradan türetilebilir.
+    """
+
+    @abstractmethod
+    def compute_tiles(
+        self,
+        origin: GridPos,
+        power: int,
+        grid_width: int,
+        grid_height: int,
+    ) -> List[GridPos]:
+        """
+        origin: (gx, gy) bomba tile'ı
+        power: kaç tile uzağa kadar
+        grid_width / grid_height: tilemap boyutları
+        """
+        raise NotImplementedError
+
+
+class NormalExplosionStrategy(ExplosionStrategy):
+    """
+    Klasik Bomberman patlaması:
+    - Ortadan 4 yöne (sağ, sol, yukarı, aşağı)
+    - Şimdilik duvarları dikkate almıyor, sadece map sınırına kadar gidiyor.
+      (Duvar kırma / bloklama logic'ini world.handle_explosion içinde
+       ya da daha sonra gelişmiş bir strategy içinde ele alırsın.)
+    """
+
+    DIRECTIONS: List[GridPos] = [
+        (1, 0),   # sağ
+        (-1, 0),  # sol
+        (0, -1),  # yukarı
+        (0, 1),   # aşağı
+    ]
+
+    def compute_tiles(
+        self,
+        origin: GridPos,
+        power: int,
+        grid_width: int,
+        grid_height: int,
+    ) -> List[GridPos]:
+        gx, gy = origin
+        tiles: List[GridPos] = [origin]  # merkez tile her zaman var
+
+        for dx, dy in self.DIRECTIONS:
+            for step in range(1, power + 1):
+                nx = gx + dx * step
+                ny = gy + dy * step
+
+                # Map dışına çıkma
+                if nx < 0 or ny < 0 or nx >= grid_width or ny >= grid_height:
+                    break
+
+                tiles.append((nx, ny))
+
+        return tiles
+
+
+# ====================================================
+# WALL TYPE
+# ====================================================
 
 class WallType(Enum):
     UNBREAKABLE = auto()
     BREAKABLE = auto()
     HARD = auto()
 
+
+# ====================================================
+# BASE ENTITY
+# ====================================================
 
 class Entity:
     def __init__(self, x, y, config):
@@ -31,6 +158,13 @@ class Entity:
 class Player(Entity):
     def __init__(self, x, y, config):
         super().__init__(x, y, config)
+
+        # --- HITBOX KÜÇÜLTME ---
+        # Tile 32x32 ise shrink=8 → 24x24 oyuncu
+        shrink = 8
+        self.rect.inflate_ip(-shrink, -shrink)
+        # -----------------------
+
         self.speed = config.PLAYER_SPEED
         self.color = self.config.COLOR_PLAYER
         self.move_dir = pygame.Vector2(0, 0)
@@ -47,19 +181,23 @@ class Player(Entity):
         pygame.draw.rect(s, self.color, self.rect)
 
 
+
 # ----------------------------------------------------
 # WALL
 # ----------------------------------------------------
 class Wall(Entity):
     """
     - UNBREAKABLE + HARD:
-        * Koyu gri 3D metal blok
-        * Kenarlarda köşe topçukları
+        * 3D blok (tema rengine göre)
     - BREAKABLE:
-        * Tuğla deseni (forest’te yaptığımız):
-          Satır 1 : [■■■■■■■■]      (tek uzun tuğla)
-          Satır 2 : [■][■■■■■■]     (1 | 23)
-          Satır 3 : [■■■■■■][■]     (12 | 3)
+        * Tuğla pattern (üstte tek, ortada 1|23, altta 12|3)
+        * Renk tema + wall_type’a göre değişir:
+          - forest:
+              UNBREAKABLE/HARD → yeşil
+              BREAKABLE        → daha koyu yeşil
+          - diğer temalar:
+              UNBREAKABLE/HARD → koyu gri
+              BREAKABLE        → bricky gri
     """
 
     def __init__(self, x, y, config, wall_type: WallType | None = None, breakable: bool = False):
@@ -71,12 +209,26 @@ class Wall(Entity):
         self.wall_type = wall_type
 
     def _base_color(self):
-        # UNBREAKABLE / HARD → koyu gri
+        theme_name = getattr(self.config, "THEME", "city")
+
+        # -------- FOREST THEME --------
+        if theme_name == "forest":
+            # Unbreakable + Hard → yeşil
+            if self.wall_type in (WallType.UNBREAKABLE, WallType.HARD):
+                return (46, 126, 2)   # #2e7e02
+            # Breakable → daha koyu yeşil
+            if self.wall_type == WallType.BREAKABLE:
+                return (30, 82, 2)
+
+        # -------- DİĞER TEMALAR (CITY vs) --------
+        # Unbreakable + Hard → koyu gri beton
         if self.wall_type in (WallType.UNBREAKABLE, WallType.HARD):
             return (112, 112, 112)
-        # BREAKABLE → forest’te seçtiğimiz koyu tuğla gri (#767a7a)
+
+        # Breakable → biraz daha bricky gri
         if self.wall_type == WallType.BREAKABLE:
-            return (118, 122, 122)
+            return (118, 122, 122)  # #767a7a
+
         return (255, 0, 255)
 
     def draw(self, s):
@@ -90,7 +242,7 @@ class Wall(Entity):
         is_border = (tx == 0 or tx == gw - 1 or ty == 0 or ty == gh - 1)
 
         # -------------------------------------------------
-        # UNBREAKABLE / HARD → 3D metal blok
+        # UNBREAKABLE / HARD → 3D blok
         # -------------------------------------------------
         if self.wall_type in (WallType.UNBREAKABLE, WallType.HARD):
             pygame.draw.rect(s, base, outer)
@@ -176,12 +328,12 @@ class Wall(Entity):
             return
 
         # -------------------------------------------------
-        # BREAKABLE → forest-style tuğla pattern
+        # BREAKABLE → tuğla pattern
         # -------------------------------------------------
         if self.wall_type == WallType.BREAKABLE:
             inner = outer  # full tile
 
-            # Harç arka planı (koyu)
+            # Harç arka planı
             pygame.draw.rect(s, (20, 20, 20), inner)
 
             brick_color = base
@@ -198,7 +350,7 @@ class Wall(Entity):
 
             rows = 3
             row_h = inner.height / rows
-            gap = 2  # tuğlalar arası harç boşluğu
+            gap = 2  # tuğlalar arası boşluk
 
             def make_brick(row_idx: int, start_r: float, end_r: float):
                 """
@@ -215,37 +367,33 @@ class Wall(Entity):
                 return pygame.Rect(x, y, w, h)
 
             def draw_brick(rect: pygame.Rect):
-                # gövde
                 pygame.draw.rect(s, brick_color, rect)
 
-                # üst highlight bandı
                 band_h = max(1, rect.height // 4)
                 band_rect = pygame.Rect(rect.x, rect.y, rect.width, band_h)
                 pygame.draw.rect(s, highlight, band_rect)
 
-                # brick outline
                 pygame.draw.rect(s, border_color, rect, 1)
 
-            # ÜST SATIR: tek uzun tuğla (0.0 → 1.0)
+            # ÜST SATIR: tek uzun tuğla
             top_brick = make_brick(0, 0.0, 1.0)
             if top_brick:
                 draw_brick(top_brick)
 
-            # ORTA SATIR: 1 | 23  → [küçük][uzun]
+            # ORTA: 1 | 23
             mid_left = make_brick(1, 0.0, 1.0 / 3.0)
             mid_right = make_brick(1, 1.0 / 3.0, 1.0)
             for b in (mid_left, mid_right):
                 if b:
                     draw_brick(b)
 
-            # ALT SATIR: 12 | 3  → [uzun][küçük]
+            # ALT: 12 | 3
             bot_left = make_brick(2, 0.0, 2.0 / 3.0)
             bot_right = make_brick(2, 2.0 / 3.0, 1.0)
             for b in (bot_left, bot_right):
                 if b:
                     draw_brick(b)
 
-            # Genel outline
             pygame.draw.rect(s, (0, 0, 0), inner, 1)
             return
 
@@ -259,20 +407,104 @@ class Wall(Entity):
 # BOMB
 # ----------------------------------------------------
 class Bomb(Entity):
+    """
+    - Zamanlayıcı dolunca patlar.
+    - Patlama alanını ExplosionStrategy ile hesaplar.
+    - Patlayınca world.handle_explosion'a tiles listesini yollar.
+    - kill() yok; sprite değiliz, exploded flag ile yönetiyoruz.
+    """
+
     def __init__(self, x, y, owner, config):
         super().__init__(x, y, config)
         self.owner = owner
-        self.timer = config.BOMB_TIMER
+        self.timer = config.BOMB_TIMER        # dt saniye ise bu da saniye
         self.color = self.config.COLOR_BOMB
 
+        # Bomba menzili: config'de yoksa default 2
+        self.power = getattr(self.config, "BOMB_POWER", 2)
+
+        # Strategy pattern
+        self.explosion_strategy: ExplosionStrategy = NormalExplosionStrategy()
+
+        # Bir kere patlasın diye flag
+        self.exploded = False
+
+        # Grid pozisyonu
+        tile_size = self.config.TILE_SIZE
+        gx = self.rect.x // tile_size
+        gy = self.rect.y // tile_size
+
+        # Opsiyonel: BOMB_PLACED event
+        try:
+            EventBus.publish(Event(
+                type=EventType.BOMB_PLACED,
+                payload={
+                    "grid_pos": (gx, gy),
+                    "owner": self.owner,
+                }
+            ))
+        except Exception as e:
+            print("[ERROR] BOMB_PLACED event sırasında hata:", repr(e))
+
     def update(self, dt, world):
+        # Zaten patladıysa bir daha hiçbir şey yapma
+        if self.exploded:
+            return
+
         self.timer -= dt
         if self.timer <= 0:
             self.explode(world)
 
     def explode(self, world):
+        # Güvenlik: iki kere çağrılırsa ignore et
+        if self.exploded:
+            return
+        self.exploded = True
+
         print("BOOM!")
-        world.handle_explosion(self)
+
+        tile_size = self.config.TILE_SIZE
+        gx = self.rect.x // tile_size
+        gy = self.rect.y // tile_size
+
+        # Default: sadece merkez tile
+        tiles = [(gx, gy)]
+
+        # Patlama alanını Strategy ile hesapla
+        try:
+            gw = getattr(self.config, "GRID_WIDTH", 15)
+            gh = getattr(self.config, "GRID_HEIGHT", 13)
+
+            tiles = self.explosion_strategy.compute_tiles(
+                origin=(gx, gy),
+                power=self.power,
+                grid_width=gw,
+                grid_height=gh,
+            )
+        except Exception as e:
+            print("[ERROR] ExplosionStrategy sırasında hata:", repr(e))
+
+        # 🔥 Asıl kritik: patlayan tile'ları world'e yolla
+        try:
+            world.handle_explosion(bomb=self, tiles=tiles)
+        except Exception as e:
+            print("[ERROR] world.handle_explosion sırasında hata:", repr(e))
+
+        # BOMB_EXPLODED event (animasyon vs. için)
+        try:
+            EventBus.publish(Event(
+                type=EventType.BOMB_EXPLODED,
+                payload={
+                    "grid_pos": (gx, gy),
+                    "tiles": tiles,
+                    "owner": self.owner,
+                }
+            ))
+        except Exception as e:
+            print("[ERROR] BOMB_EXPLODED event sırasında hata:", repr(e))
 
     def draw(self, s):
         pygame.draw.rect(s, self.color, self.rect)
+
+
+
