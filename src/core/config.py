@@ -77,8 +77,8 @@ class GameConfig:
             },
 
             "city": {
-                "bg": (60, 60, 70),
-                "bg_alt": (55, 55, 60),
+                "bg": (185, 185, 185),  # CITY zemin rengi
+                "bg_alt": (185, 185, 185),  # düz tek renk
 
                 "solid_wall": (110, 110, 120),
                 "solid_wall_border": (60, 60, 70),
