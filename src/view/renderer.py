@@ -22,6 +22,9 @@ class Renderer:
         for bomb in world.bombs:
             bomb.draw(self.screen)
 
+        for pu in getattr(world, "powerups", []):
+            pu.draw(self.screen)
+
         # 4) Oyuncu
         if world.player is not None:
             world.player.draw(self.screen)

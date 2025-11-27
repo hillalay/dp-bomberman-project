@@ -130,6 +130,12 @@ class WallType(Enum):
     BREAKABLE = auto()
     HARD = auto()
 
+class PowerUpType(Enum):
+    BOMB_COUNT=auto()
+    BOMB_POWER=auto()
+    SPEED=auto()
+
+
 
 # ====================================================
 # BASE ENTITY
@@ -165,9 +171,19 @@ class Player(Entity):
         self.rect.inflate_ip(-shrink, -shrink)
         # -----------------------
 
-        self.speed = config.PLAYER_SPEED
-        self.color = self.config.COLOR_PLAYER
+        #Hız Bomba özellikleri
+        self.base_speed = config.PLAYER_SPEED
+        self.speed=self.base_speed
+
+        #Aynı anda kaç bomba koyulur
+        self.max_bombs = getattr(config,"MAX_BOMBS",1)
+
+        #Bombanın patlama menzili
+        self.bomb_power = getattr(config,"BOMB_POWER",2)
+
+        self.color=self.config.COLOR_PLAYER
         self.move_dir = pygame.Vector2(0, 0)
+
 
     def update(self, dt, world):
         if self.move_dir.length_squared() > 0:
@@ -207,6 +223,25 @@ class Wall(Entity):
             wall_type = WallType.BREAKABLE if breakable else WallType.UNBREAKABLE
 
         self.wall_type = wall_type
+
+        #--------HP Sistemı--------
+
+        if self.wall_type == WallType.UNBREAKABLE:
+            self.hp = 999999999
+        elif self.wall_type == WallType.HARD:
+            self.hp = 2
+        elif self.wall_type == WallType.BREAKABLE:
+            self.hp = 1
+        else:
+            self.hp = 1
+    def take_damage(self) -> bool:
+        """ True dönerse duvar yok edilir """
+        if self.wall_type == WallType.UNBREAKABLE:
+            return False
+        
+        self.hp -= 1
+        return self.hp <= 0
+
 
     def _base_color(self):
         theme_name = getattr(self.config, "THEME", "city")
@@ -420,8 +455,11 @@ class Bomb(Entity):
         self.timer = config.BOMB_TIMER        # dt saniye ise bu da saniye
         self.color = self.config.COLOR_BOMB
 
-        # Bomba menzili: config'de yoksa default 2
-        self.power = getattr(self.config, "BOMB_POWER", 2)
+        #Bomba menzili:owner.bomb_power varsa onu kullan yoksa configden al
+        base_power = getattr(self.config,"BOMB_POWER",2)
+        owner_power = getattr(self.owner,"bomb_power",base_power)
+        self.power = owner_power
+
 
         # Strategy pattern
         self.explosion_strategy: ExplosionStrategy = NormalExplosionStrategy()
@@ -506,5 +544,57 @@ class Bomb(Entity):
     def draw(self, s):
         pygame.draw.rect(s, self.color, self.rect)
 
+
+class PowerUp(Entity):
+    """
+    Kırılan duvarlardan çıkan power-up:
+    - kind: PowerUpType
+    Player üzerinden geçerse apply() çağrılır.
+    """
+
+    def __init__(self, x, y, config, kind: PowerUpType):
+        super().__init__(x, y, config)
+        self.kind = kind
+
+        # Görsel olarak biraz küçük dursun
+        shrink = self.config.TILE_SIZE // 4
+        self.rect.inflate_ip(-shrink, -shrink)
+
+        # Renkleri türüne göre farklı yapalım
+        if self.kind == PowerUpType.BOMB_COUNT:
+            self.color = (80, 200, 255)   # mavi
+        elif self.kind == PowerUpType.BOMB_POWER:
+            self.color = (255, 180, 80)   # turuncu
+        elif self.kind == PowerUpType.SPEED:
+            self.color = (150, 255, 150)  # yeşilimsi
+        else:
+            self.color = (255, 255, 255)
+
+    def apply(self, player: Player):
+        """
+        Power-up player'a uygulanır.
+        Şimdilik etkiler kalıcı.
+        """
+        if self.kind == PowerUpType.BOMB_COUNT:
+            # Max bomba sayısını 1 arttır
+            current = getattr(player, "max_bombs", 1)
+            player.max_bombs = current + 1
+            print("[PowerUp] Bomb count increased:", player.max_bombs)
+
+        elif self.kind == PowerUpType.BOMB_POWER:
+            current = getattr(player, "bomb_power", 2)
+            player.bomb_power = current + 1
+            print("[PowerUp] Bomb power increased:", player.bomb_power)
+
+        elif self.kind == PowerUpType.SPEED:
+            # Hızı %30 arttır
+            if not hasattr(player, "base_speed"):
+                player.base_speed = player.speed
+            player.base_speed *= 1.3
+            player.speed = player.base_speed
+            print("[PowerUp] Speed boosted:", player.speed)
+
+    def draw(self, s):
+        pygame.draw.rect(s, self.color, self.rect)
 
 
