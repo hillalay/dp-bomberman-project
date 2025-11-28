@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Any, List, Tuple, DefaultDict
 from collections import defaultdict
 from abc import ABC, abstractmethod
+from model.player_state import PlayerState, NormalState, SpeedBoostState
+
 
 
 # ====================================================
@@ -172,22 +174,42 @@ class Player(Entity):
         # -----------------------
 
         #Hız Bomba özellikleri
-        self.base_speed = config.PLAYER_SPEED
-        self.speed=self.base_speed
+        self.base_speed = config.PLAYER_SPEED #Temel hız
+        self.color=self.config.COLOR_PLAYER
 
         #Aynı anda kaç bomba koyulur
         self.max_bombs = getattr(config,"MAX_BOMBS",1)
 
         #Bombanın patlama menzili
-        self.bomb_power = getattr(config,"BOMB_POWER",2)
+        self.bomb_power = getattr(self.config,"BOMB_POWER",2)
 
-        self.color=self.config.COLOR_PLAYER
+
         self.move_dir = pygame.Vector2(0, 0)
+
+        # ---- STATE PATTERN ----
+        # Player'ın current state'i (NormalState ile başlıyoruz)
+        self.state: PlayerState = NormalState(self)
+        self.state.enter()
+
+    def change_state(self, new_state: PlayerState):
+        """
+        State değişimi için tek nokta.
+        """
+        if self.state is not None:
+            self.state.exit()
+        self.state = new_state
+        self.state.enter()
+
 
 
     def update(self, dt, world):
+        # Önce state'i güncelle (örneğin SpeedBoost süresi azalacak)
+        if self.state is not None:
+            self.state.update(dt)
         if self.move_dir.length_squared() > 0:
-            move = self.move_dir.normalize() * self.speed * dt
+            speed=self.state.get_speed() if self.state is not None else self.base_speed
+
+            move = self.move_dir.normalize() * speed * dt
             new_rect = self.rect.move(move.x, move.y)
 
             if not world.collides_with_solid(new_rect):
@@ -587,12 +609,10 @@ class PowerUp(Entity):
             print("[PowerUp] Bomb power increased:", player.bomb_power)
 
         elif self.kind == PowerUpType.SPEED:
-            # Hızı %30 arttır
-            if not hasattr(player, "base_speed"):
-                player.base_speed = player.speed
-            player.base_speed *= 1.3
-            player.speed = player.base_speed
-            print("[PowerUp] Speed boosted:", player.speed)
+            #State pattern:SpeedBoostState'e geç
+            from model.player_state import SpeedBoostState
+            player.change_state(SpeedBoostState(player))
+            print("[PowerUp] Speed state changed ->SpeedBoostState")
 
     def draw(self, s):
         pygame.draw.rect(s, self.color, self.rect)
