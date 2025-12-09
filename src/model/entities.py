@@ -5,7 +5,7 @@ from typing import Callable, Dict, Any, List, Tuple, DefaultDict
 from collections import defaultdict
 from abc import ABC, abstractmethod
 from model.player_state import PlayerState, NormalState, SpeedBoostState
-
+from core.event_bus import EventBus, EventType, Event
 
 
 # ====================================================
@@ -16,7 +16,7 @@ class EventType(Enum):
     BOMB_PLACED = auto()
     BOMB_EXPLODED = auto()
     WALL_DESTROYED = auto()
-
+    POWERUP_PICKED = auto()
 
 @dataclass
 class Event:
@@ -460,30 +460,28 @@ class Wall(Entity):
         pygame.draw.rect(s, (40, 40, 40), inner, 2)
 
 
-# ----------------------------------------------------
-# BOMB
-# ----------------------------------------------------
+# --- BOMB ---------------------------------------------------------
 class Bomb(Entity):
     """
     - Zamanlayıcı dolunca patlar.
-    - Patlama alanını ExplosionStrategy ile hesaplar.
+    - Patlama alanını ExplosionStrategy (Strategy Pattern) ile hesaplar.
     - Patlayınca world.handle_explosion'a tiles listesini yollar.
-    - kill() yok; sprite değiliz, exploded flag ile yönetiyoruz.
+    - EventBus ile BOMB_PLACED / BOMB_EXPLODED event'leri yayınlar (Observer).
     """
 
     def __init__(self, x, y, owner, config):
         super().__init__(x, y, config)
         self.owner = owner
-        self.timer = config.BOMB_TIMER        # dt saniye ise bu da saniye
+        self.timer = config.BOMB_TIMER  # dt saniye ise bu da saniye
         self.color = self.config.COLOR_BOMB
 
-        #Bomba menzili:owner.bomb_power varsa onu kullan yoksa configden al
-        base_power = getattr(self.config,"BOMB_POWER",2)
-        owner_power = getattr(self.owner,"bomb_power",base_power)
+        # --- Bomba menzili ---
+        # Owner'ın bomb_power özelliği varsa onu kullan, yoksa config'deki default'u al.
+        base_power = getattr(self.config, "BOMB_POWER", 2)
+        owner_power = getattr(self.owner, "bomb_power", base_power)
         self.power = owner_power
 
-
-        # Strategy pattern
+        # Strategy Pattern: Patlama alanını hesaplayan strateji
         self.explosion_strategy: ExplosionStrategy = NormalExplosionStrategy()
 
         # Bir kere patlasın diye flag
@@ -494,15 +492,17 @@ class Bomb(Entity):
         gx = self.rect.x // tile_size
         gy = self.rect.y // tile_size
 
-        # Opsiyonel: BOMB_PLACED event
+        # --- Observer Pattern: BOMB_PLACED event'i yayınla ---
         try:
-            EventBus.publish(Event(
-                type=EventType.BOMB_PLACED,
-                payload={
-                    "grid_pos": (gx, gy),
-                    "owner": self.owner,
-                }
-            ))
+            EventBus.publish(
+                Event(
+                    type=EventType.BOMB_PLACED,
+                    payload={
+                        "grid_pos": (gx, gy),
+                        "owner": self.owner,
+                    },
+                )
+            )
         except Exception as e:
             print("[ERROR] BOMB_PLACED event sırasında hata:", repr(e))
 
@@ -530,7 +530,7 @@ class Bomb(Entity):
         # Default: sadece merkez tile
         tiles = [(gx, gy)]
 
-        # Patlama alanını Strategy ile hesapla
+        # --- Strategy Pattern: patlama alanını hesapla ---
         try:
             gw = getattr(self.config, "GRID_WIDTH", 15)
             gh = getattr(self.config, "GRID_HEIGHT", 13)
@@ -550,16 +550,18 @@ class Bomb(Entity):
         except Exception as e:
             print("[ERROR] world.handle_explosion sırasında hata:", repr(e))
 
-        # BOMB_EXPLODED event (animasyon vs. için)
+        # --- Observer Pattern: BOMB_EXPLODED event'i yayınla ---
         try:
-            EventBus.publish(Event(
-                type=EventType.BOMB_EXPLODED,
-                payload={
-                    "grid_pos": (gx, gy),
-                    "tiles": tiles,
-                    "owner": self.owner,
-                }
-            ))
+            EventBus.publish(
+                Event(
+                    type=EventType.BOMB_EXPLODED,
+                    payload={
+                        "grid_pos": (gx, gy),
+                        "tiles": tiles,
+                        "owner": self.owner,
+                    },
+                )
+            )
         except Exception as e:
             print("[ERROR] BOMB_EXPLODED event sırasında hata:", repr(e))
 
@@ -567,11 +569,13 @@ class Bomb(Entity):
         pygame.draw.rect(s, self.color, self.rect)
 
 
+# --- POWERUP ------------------------------------------------------
 class PowerUp(Entity):
     """
     Kırılan duvarlardan çıkan power-up:
     - kind: PowerUpType
     Player üzerinden geçerse apply() çağrılır.
+    Burada State Pattern (SpeedBoostState) ile de entegre.
     """
 
     def __init__(self, x, y, config, kind: PowerUpType):
@@ -596,6 +600,8 @@ class PowerUp(Entity):
         """
         Power-up player'a uygulanır.
         Şimdilik etkiler kalıcı.
+        Burada doğrudan Player'ı güncelliyoruz, istersen EventBus ile POWERUP_PICKED
+        event'i de yayınlayıp ses / skor sistemine haber verebilirsin.
         """
         if self.kind == PowerUpType.BOMB_COUNT:
             # Max bomba sayısını 1 arttır
@@ -609,12 +615,22 @@ class PowerUp(Entity):
             print("[PowerUp] Bomb power increased:", player.bomb_power)
 
         elif self.kind == PowerUpType.SPEED:
-            #State pattern:SpeedBoostState'e geç
+            # State Pattern: SpeedBoostState'e geç
             from model.player_state import SpeedBoostState
             player.change_state(SpeedBoostState(player))
-            print("[PowerUp] Speed state changed ->SpeedBoostState")
+            print("[PowerUp] Speed state changed -> SpeedBoostState")
+
+      
+        # Eğer EventType'a POWERUP_PICKED eklediysen açabilirsin:
+        try:
+             EventBus.publish(
+                 Event(
+                     type=EventType.POWERUP_PICKED,
+                     payload={"kind": self.kind, "player": player},
+                 )
+             )
+        except Exception as e:
+             print("[ERROR] POWERUP_PICKED event sırasında hata:", repr(e))
 
     def draw(self, s):
         pygame.draw.rect(s, self.color, self.rect)
-
-

@@ -18,14 +18,18 @@ class PlayingState(GameState):
         self.world = game.world
         self.input_handler = game.input_handler
         self.renderer = game.renderer
-
         self.debug_font = pygame.font.SysFont("Arial", 24, bold=True)
 
     def enter(self):
         print("[PlayingState] enter")
+        # Oyun müziğini çal
+        self.game.sound.stop_music()
+
 
     def exit(self):
         print("[PlayingState] exit")
+        # Müzik durdurulsun
+        self.game.sound.stop_music()
 
     # ---------------- INPUT ----------------
     def handle_event(self, event: pygame.event.Event):

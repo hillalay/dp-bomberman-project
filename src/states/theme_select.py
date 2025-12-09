@@ -45,6 +45,14 @@ class ThemeSelectState(GameState):
         def choose_theme(theme: str):
             # Config'e temayı yaz ve Playing'e geç
             self.game.config.set_theme(theme)
+
+            #DB tema tercihini kalıcı yap
+            if hasattr(self.game,"preferences_repo") and hasattr(self.game,"current_user"):
+                self.game.preferences_repo.update_preferences(
+                    user_id=self.game.current_user.id,
+                    theme=theme
+                )
+                
             from states.playing import PlayingState
             self.game.set_state(PlayingState(self.game))
 
