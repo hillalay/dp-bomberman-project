@@ -2,7 +2,7 @@
 
 import pygame
 from typing import Dict
-
+from utils.paths import asset_path
 
 class SoundManager:
     """
@@ -25,11 +25,10 @@ class SoundManager:
     # ---------------------- MUSIC ----------------------
     def play_music(self, path: str, loop: bool = True) -> None:
         """
-        Verilen dosya yolundan müzik çalar.
-        path: 'assets/music/menu_theme.mp3' gibi.
-        loop=True ise sonsuz döngüde çalar.
+        path: 'music/menu_theme.mp3' gibi RELATIVE asset path
         """
         try:
+            full_path = asset_path(path)  # <-- KRİTİK SATIR
             pygame.mixer.music.load(path)
             pygame.mixer.music.set_volume(self.music_volume)
             # loop=True ise -1, değilse 0 kere çal
@@ -54,14 +53,18 @@ class SoundManager:
         """
         Bir efekt sesini belleğe yükleyip dictionary'e koyar.
         name: 'explosion'
-        path: 'assets/sfx/explosion.wav'
+        path: 'sfx/explosion.wav' gibi RELATIVE asset path
         """
+        full_path = asset_path(path)  # <-- KRİTİK SATIR
         try:
-            sound = pygame.mixer.Sound(path)
+            
+            sound = pygame.mixer.Sound(full_path)
             sound.set_volume(self.sfx_volume)
             self.sfx[name] = sound
+            print("[SoundManager] SFX yüklendi:", name, full_path)
         except Exception as e:
-            print("[SoundManager] SFX yüklenemedi:", name, path, repr(e))
+            print("[SoundManager] SFX yüklenemedi:", name, full_path,repr(e))
+
 
     def play_sfx(self, name: str) -> None:
         """
@@ -69,6 +72,7 @@ class SoundManager:
         """
         sound = self.sfx.get(name)
         if sound is not None:
+            print(f"[SoundManager] play_sfx: '{name}' bulunamadı. Yüklü olanlar: {list(self.sfx.keys())}")
             sound.set_volume(self.sfx_volume)
             sound.play()
 

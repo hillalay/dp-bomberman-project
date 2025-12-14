@@ -74,10 +74,10 @@ class Game:
             sfx_volume=initial_sfx_vol,
         )
 
-        # SFX dosyalarını yükle (path'ler sende mp3 ise ona göre)
-        self.sound.load_sfx("explosion", "assets/sfx/explosion.mp3")
-        self.sound.load_sfx("bomb_place", "assets/sfx/bomb_place.mp3")
-        self.sound.load_sfx("powerup", "assets/sfx/powerup.mp3")
+        # SFX dosyalarını yükle (path'ler sende wav ise ona göre)
+        self.sound.load_sfx("explosion", "sfx/explosion.wav")
+        self.sound.load_sfx("bomb_place", "sfx/bomb_place.wav")
+        self.sound.load_sfx("powerup", "sfx/powerup.wav")
 
         # EventBus üzerinden ses event'lerini dinleyen observer
         self.sound_events = SoundEventListener(self.sound)
