@@ -10,6 +10,8 @@ class EventType(Enum):
     BOMB_PLACED = auto()
     BOMB_EXPLODED = auto()
     WALL_DESTROYED = auto()
+    POWERUP_PICKED=auto()
+    PLAYER_DIED = auto()
 
 
 @dataclass

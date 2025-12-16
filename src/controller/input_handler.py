@@ -1,3 +1,11 @@
+"""
+DEPRECATED:
+Bu sınıf Command Pattern öncesi kontrol akışıydı.
+Artık PlayingState -> CommandMapper -> CommandInvoker -> Command üzerinden input işlenir.
+Rapor amacıyla korunmuştur.
+
+
+
 import pygame
 
 
@@ -22,3 +30,4 @@ class InputHandler:
                 player.move_dir.y = 0
             if event.key in (pygame.K_a, pygame.K_LEFT, pygame.K_d, pygame.K_RIGHT):
                 player.move_dir.x = 0
+"""

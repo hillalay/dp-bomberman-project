@@ -150,51 +150,43 @@ class World:
 
 
     def place_bomb(self):
-        #Önce oyuncunun şu an kaç bombası var,say
-        current_bombs = sum(
-            1 for b in self.bombs 
-            if getattr(b, "owner", None) is self.player)
-        max_bombs = getattr(self.player, "max_bombs",self.config.MAX_BOMBS)
-        if current_bombs >= max_bombs:
-            return  # Maksimum bombaya ulaşıldı, yeni bomba yerleştirilemez
+    # Owner'a ait aktif bombalar
+        active = sum(
+            1 for b in self.bombs
+            if not b.exploded and b.owner is self.player
+            )
+        if active >= self.player.max_bombs:
+            return  # limit dolu
+
+        tile_x = self.player.rect.centerx // self.config.TILE_SIZE
+        tile_y = self.player.rect.centery // self.config.TILE_SIZE
         
-        tile_x = self.player.rect.x // self.config.TILE_SIZE
-        tile_y = self.player.rect.y // self.config.TILE_SIZE
         bomb = self.factory.create(
             "bomb",
             x=tile_x,
             y=tile_y,
             owner=self.player,
-        )
+            )
         self.bombs.append(bomb)
 
-    # -------------------------
-    # 💣 PATLAMA LOGİĞİ
-    # -------------------------
     def handle_explosion(self, bomb, tiles=None):
-        """
-        - bomb: patlayan bomba objesi
-        - tiles: şimdilik sadece görsel/ilerideki kullanım için; burada
-                 patlama mantığını kendimiz hesaplayacağız.
-
-        Mantık:
-        - Patlama artı şeklinde yayılır (sağ, sol, yukarı, aşağı).
-        - Her yönde:
-            * UNBREAKABLE görürse: durur, duvar zarar almaz.
-            * HARD / BREAKABLE görürse: hasar verir, SONRA durur (arka taraf patlamaz).
-        """
+        
         ts = self.config.TILE_SIZE
 
-        # Bombanın grid koordinatı
+    # Bombanın grid koordinatı
         gx = bomb.rect.x // ts
         gy = bomb.rect.y // ts
 
-        # Bomba gücü (owner'dan veya config'ten geliyor)
+    # Bomba gücü (menzil)
         power = getattr(bomb, "power", 2)
 
         destroyed_walls = []
 
-        # --- Merkez tile'da duvar varsa önce onu kontrol et ---
+    # Patlama alanını SET olarak tut (duvar bloklaması sonrası gerçek alan)
+        blast_tiles = set(tiles) if tiles else set()
+        blast_tiles.add((gx, gy))  # merkez her zaman etkilenir
+
+    # --- Merkez tile'da duvar varsa önce onu kontrol et ---
         center_wall = self._get_wall_at(gx, gy)
         if center_wall is not None:
             if getattr(center_wall, "wall_type", None) != WallType.UNBREAKABLE:
@@ -202,53 +194,55 @@ class World:
                     if center_wall.take_damage():
                         destroyed_walls.append(center_wall)
                 else:
-                    # Eski fallback: breakable ise tek seferde kır
                     if getattr(center_wall, "wall_type", None) == WallType.BREAKABLE:
                         destroyed_walls.append(center_wall)
 
-        # --- Dört yöne doğru yayıl ---
+    # --- Dört yöne doğru yayıl (duvar bloklama burada) ---
         directions = [
             (1, 0),   # sağ
             (-1, 0),  # sol
             (0, -1),  # yukarı
             (0, 1),   # aşağı
-        ]
-
+            ]
+        
         gw, gh = self.config.GRID_WIDTH, self.config.GRID_HEIGHT
-
+        
         for dx, dy in directions:
             for step in range(1, power + 1):
                 nx = gx + dx * step
                 ny = gy + dy * step
 
-                # Harita dışına çıktıysak o yönde dur
+            # Harita dışı
                 if nx < 0 or ny < 0 or nx >= gw or ny >= gh:
                     break
 
                 wall = self._get_wall_at(nx, ny)
+
+            # Boş tile -> patlama etkiler, devam eder
                 if wall is None:
-                    # Burada istersen ileride player/enemy damage bakarsın
+                    blast_tiles.add((nx, ny))
                     continue
 
-                # UNBREAKABLE → patlama buradan öteye geçmesin, duvar da hasar almasın
+            # Duvarın olduğu tile'a kadar patlama gelir
+                blast_tiles.add((nx, ny))
+
+            # UNBREAKABLE -> hasar yok, bu yönde dur
                 if getattr(wall, "wall_type", None) == WallType.UNBREAKABLE:
                     break
 
-                # HARD / BREAKABLE → hasar ver
+            # HARD / BREAKABLE -> hasar ver (varsa take_damage)
                 if hasattr(wall, "take_damage"):
                     destroyed = wall.take_damage()
                 else:
-                    # Fallback: sadece BREAKABLE'lar tek seferde kırılsın
                     destroyed = (getattr(wall, "wall_type", None) == WallType.BREAKABLE)
 
                 if destroyed:
                     destroyed_walls.append(wall)
 
-                # Hangi tip olursa olsun (UNBREAKABLE / HARD / BREAKABLE),
-                # ilk duvardan SONRA patlama devam ETMEMELİ, o yüzden break
+            # Duvar gördükten sonra patlama o yönde devam etmez
                 break
-
-        # --- Duvarları sil + breakable'lardan power-up dene ---
+# --- Duvarları sil + breakable'lardan power-up dene ---
+            
         for wall in destroyed_walls:
             wx = wall.rect.x // ts
             wy = wall.rect.y // ts
@@ -256,7 +250,7 @@ class World:
             if wall in self.walls:
                 self.walls.remove(wall)
 
-            # Sadece BREAKABLE duvarlardan power-up çıksın
+        # Sadece BREAKABLE duvarlardan power-up çıksın
             if getattr(wall, "wall_type", None) == WallType.BREAKABLE:
                 pu = self.powerup_factory.maybe_spawn(wx, wy)
                 if pu is not None:
@@ -266,4 +260,17 @@ class World:
         if bomb in self.bombs:
             self.bombs.remove(bomb)
 
-        # İleride: player/enemy damage vs. buraya gelir
+# -------------------------
+# 💥 PLAYER HIT CHECK
+# -------------------------
+        ts = self.config.TILE_SIZE
+        px = self.player.rect.centerx // ts
+        py = self.player.rect.centery // ts
+
+        if (px, py) in blast_tiles:
+            damage = getattr(self.config, "BOMB_DAMAGE", 1)
+            self.player.take_damage(damage)
+            
+            if not self.player.alive:
+                print("[World] Player killed by explosion!")
+ 

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Dict
 
-from data.db import Database
+from data.db import get_connection
 
 
 @dataclass
@@ -25,7 +25,7 @@ class ScoresRepo:
     """
 
     def __init__(self) -> None:
-        self.conn = Database.get_connection()
+        self.conn = get_connection()
 
     # -------- oyun sonucu ekleme --------
     def add_game_result(self, user_id: int, score: int, won: bool) -> None:

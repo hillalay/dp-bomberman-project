@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from states.base import GameState
 from ui.widgets import Button
 from states.options import OptionsState  # Options menüsüne geçmek için
+from utils.paths import asset_path
 
 if TYPE_CHECKING:
     from core.game import Game
@@ -45,9 +46,9 @@ class MenuState(GameState):
         btn_height = 60
         spacing = 20
 
-        # 3 butonluk yüksekliği hesapla (Play, Options, Exit)
-        total_height = 3 * btn_height + 2 * spacing
-        start_y = (height // 2) - total_height // 2 + 40  # biraz aşağı kaydır
+        # 4 butonluk yüksekliği hesapla (Play, Options, Exit,leaderboard)
+        total_height = 4 * btn_height + 3 * spacing
+        start_y = (height // 2) - total_height // 2 + 110  # biraz aşağı kaydır
 
         center_x = width // 2
 
@@ -55,8 +56,9 @@ class MenuState(GameState):
             """
             row_index:
               0 -> Play
-              1 -> Options
-              2 -> Exit
+              1 -> Leaderboard
+              2 -> Options
+              3 ->Exit
             """
             x = center_x - btn_width // 2
             y = start_y + row_index * (btn_height + spacing)
@@ -64,8 +66,12 @@ class MenuState(GameState):
 
         # Play butonu: ThemeSelectState'e geç
         def on_play():
-            from states.theme_select import ThemeSelectState
-            self.game.set_state(ThemeSelectState(self.game))
+            from states.auth import AuthState
+            self.game.set_state(AuthState(self.game))
+
+        def on_leaderboard():
+            from states.leaderboard import LeaderboardState
+            self.game.set_state(LeaderboardState(self.game))
 
         # Options butonu: OptionsState'e geç
         def on_options():
@@ -79,8 +85,9 @@ class MenuState(GameState):
         # 3 butonluk liste
         self.buttons = [
             Button(make_rect(0), "Play", on_play, self.button_font),
-            Button(make_rect(1), "Options", on_options, self.button_font),
-            Button(make_rect(2), "Exit", on_exit, self.button_font),
+            Button(make_rect(1),"Leaderboard",on_leaderboard,self.button_font),
+            Button(make_rect(2), "Options", on_options, self.button_font),
+            Button(make_rect(3), "Exit", on_exit, self.button_font),
         ]
 
     def enter(self) -> None:
@@ -88,7 +95,7 @@ class MenuState(GameState):
 
         # Menü müziğini çal
         try:
-            path="assets/music/menu_theme.mp3"
+            path = asset_path("music", "menu_theme.mp3")
             print("[Audio] Menü müziği yükleniyor:", path)
 
             # 1) Müzik dosyasını yükle
@@ -130,33 +137,28 @@ class MenuState(GameState):
 
     def render(self, surface: pygame.Surface) -> None:
         surface.fill(self.background_color)
+        w, h = surface.get_width(), surface.get_height()
 
-        # Hafif ortadaki panel
-        panel_rect = pygame.Rect(
-            0, 0, surface.get_width() * 0.6, surface.get_height() * 0.6
-        )
-        panel_rect.center = (
-            surface.get_width() // 2,
-            surface.get_height() // 2 + 20,
-        )
+       # Başlık üstte kalsın diye paneli biraz aşağı al, boyunu küçült
+        panel_w = int(w * 0.62)
+        panel_h = int(h * 0.50)
+        panel_rect = pygame.Rect(0, 0, panel_w, panel_h)
+        panel_rect.center = (w // 2, h // 2 + 70)
+
         panel_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
-        panel_surf.fill((0, 0, 0, 80))
+        panel_surf.fill((0, 0, 0, 110))
         surface.blit(panel_surf, panel_rect.topleft)
 
         # Başlık
         title_surf = self.title_font.render("Bomberman DP", True, (230, 230, 255))
-        title_rect = title_surf.get_rect(
-            center=(surface.get_width() // 2, surface.get_height() // 3)
-        )
+        title_rect = title_surf.get_rect(center=(w // 2, 120))
         surface.blit(title_surf, title_rect)
 
         # Alt açıklama
         subtitle_surf = self.subtitle_font.render(
             "Press Play to start, ESC to pause", True, (180, 180, 200)
         )
-        subtitle_rect = subtitle_surf.get_rect(
-            center=(surface.get_width() // 2, title_rect.bottom + 24)
-        )
+        subtitle_rect = subtitle_surf.get_rect(center=(w // 2, 165))
         surface.blit(subtitle_surf, subtitle_rect)
 
         # Butonlar

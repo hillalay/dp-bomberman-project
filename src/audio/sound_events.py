@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-
 from model.entities import EventBus, EventType, Event
 from audio.sound_manager import SoundManager
+from core.event_bus import EventBus, EventType, Event
 
 if TYPE_CHECKING:
     from core.game import Game

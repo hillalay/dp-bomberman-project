@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING
 
 from core.config import GameConfig
 from model.world import World
-from controller.input_handler import InputHandler
 from view.renderer import Renderer
-
 from data.users_repo import UsersRepo
 from data.preferences_repo import PreferencesRepo
-
 from audio.sound_manager import SoundManager
 from audio.sound_events import SoundEventListener
+from controller.command_invoker import CommandInvoker
+from controller.command_mapper import CommandMapper
+
 
 if TYPE_CHECKING:
     from states.base import GameState
@@ -90,8 +90,9 @@ class Game:
 
         # Model & View (PlayingState kullanacak)
         self.world = World(self.config)
-        self.input_handler = InputHandler()
         self.renderer = Renderer(self.screen)
+        self.command_invoker=CommandInvoker()
+        self.command_mapper = CommandMapper()
 
         # İlk state: Menü
         from states.menu import MenuState
@@ -111,6 +112,13 @@ class Game:
         else:
             print(f"[Game] Existing user loaded: {user.username}")
         return user
+    
+    def start_new_game(self) -> None:
+        # Yeni oyun başlatır (State'ler bunu çağırır).
+        # World resetlenir; böylece player tekrar alive olur.
+        self.world =World(self.config)
+
+
 
     # STATE DEĞİŞTİRME
     def set_state(self, new_state: "GameState"):

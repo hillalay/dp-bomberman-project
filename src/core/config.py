@@ -13,6 +13,8 @@ class GameConfig:
         if GameConfig._instance is not None:
             raise Exception("Use GameConfig.get_instance() instead of GameConfig()")
 
+
+
         # -------------------------
         # Grid & ekran
         # -------------------------
@@ -28,8 +30,12 @@ class GameConfig:
         # -------------------------
         self.FPS = 60
         self.PLAYER_SPEED = 4 * self.TILE_SIZE
+
+        #bombalar
         self.BOMB_TIMER = 2.0
         self.MAX_BOMBS = 3
+        self.BOMB_POWER=2 #Patlama menzili(tile sayısı)
+        self.BOMB_DAMAGE=1 #Oyuncuya verilen hasar
 
         # -------------------------
         # Aktif tema

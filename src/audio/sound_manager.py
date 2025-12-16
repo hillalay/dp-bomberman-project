@@ -70,11 +70,14 @@ class SoundManager:
         """
         Daha önce load_sfx ile yüklenmiş bir efekti çalar.
         """
+        name=name.strip()
         sound = self.sfx.get(name)
         if sound is not None:
             print(f"[SoundManager] play_sfx: '{name}' bulunamadı. Yüklü olanlar: {list(self.sfx.keys())}")
             sound.set_volume(self.sfx_volume)
             sound.play()
+        else:
+            print(f"[SoundManager] play_sfx: '{name}' bulunamadı. Yüklü olanlar: {list(self.sfx.keys())}")
 
     def set_sfx_volume(self, volume: float) -> None:
         """

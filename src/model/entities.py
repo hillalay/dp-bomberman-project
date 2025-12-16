@@ -12,42 +12,6 @@ from core.event_bus import EventBus, EventType, Event
 # EVENT SYSTEM (Observer / Mediator)
 # ====================================================
 
-class EventType(Enum):
-    BOMB_PLACED = auto()
-    BOMB_EXPLODED = auto()
-    WALL_DESTROYED = auto()
-    POWERUP_PICKED = auto()
-
-@dataclass
-class Event:
-    type: EventType
-    payload: Dict[str, Any] | None = None
-
-
-Listener = Callable[[Event], None]
-
-
-class EventBus:
-    """
-    Basit global EventBus.
-    - subscribe(event_type, listener)
-    - publish(Event)
-    """
-    _subscribers: DefaultDict[EventType, List[Listener]] = defaultdict(list)
-
-    @classmethod
-    def subscribe(cls, event_type: EventType, listener: Listener) -> None:
-        cls._subscribers[event_type].append(listener)
-
-    @classmethod
-    def unsubscribe(cls, event_type: EventType, listener: Listener) -> None:
-        if listener in cls._subscribers[event_type]:
-            cls._subscribers[event_type].remove(listener)
-
-    @classmethod
-    def publish(cls, event: Event) -> None:
-        for listener in list(cls._subscribers.get(event.type, [])):
-            listener(event)
 
 
 # ====================================================
@@ -167,10 +131,17 @@ class Player(Entity):
     def __init__(self, x, y, config):
         super().__init__(x, y, config)
 
+        self.max_bombs=1
+        self.hp_max=3
+        self.hp = 3
+        self.alive = True
+        self.invuln_time = 0.0  # opsiyonel
+
         # --- HITBOX KÜÇÜLTME ---
         # Tile 32x32 ise shrink=8 → 24x24 oyuncu
         shrink = 8
         self.rect.inflate_ip(-shrink, -shrink)
+
         # -----------------------
 
         #Hız Bomba özellikleri
@@ -200,12 +171,31 @@ class Player(Entity):
         self.state = new_state
         self.state.enter()
 
+    def take_damage(self,amount:int=1):
+        if not self.alive:
+            return
+        if self.invuln_time >0:
+            return
+        self.hp -=amount
+        self.invuln_time =1.0
+        print(f"[Player] Damage taken! HP={self.hp}")
+
+        if self.hp <=0:
+            self.alive=False
+            print("[Player] DEAD")
 
 
     def update(self, dt, world):
         # Önce state'i güncelle (örneğin SpeedBoost süresi azalacak)
+        if self.invuln_time >0:
+            self.invuln_time -=dt
+            if self.invuln_time <0:
+                self.invuln_time =0
+        # statei güncelle
         if self.state is not None:
             self.state.update(dt)
+
+        # Hareket
         if self.move_dir.length_squared() > 0:
             speed=self.state.get_speed() if self.state is not None else self.base_speed
 
@@ -245,6 +235,10 @@ class Wall(Entity):
             wall_type = WallType.BREAKABLE if breakable else WallType.UNBREAKABLE
 
         self.wall_type = wall_type
+        self.invuln_time = 0.0   # <<< KRİTİK SATIR
+
+
+
 
         #--------HP Sistemı--------
 
@@ -256,12 +250,18 @@ class Wall(Entity):
             self.hp = 1
         else:
             self.hp = 1
-    def take_damage(self) -> bool:
-        """ True dönerse duvar yok edilir """
-        if self.wall_type == WallType.UNBREAKABLE:
+
+
+    def take_damage(self,amount:int=1) -> None:
+        if self.wall_type ==WallType.UNBREAKABLE:
             return False
         
-        self.hp -= 1
+        if self.invuln_time >0:
+            return False
+        
+        self.hp -=amount
+        self.invuln_time=0.6 # 0.6 sn dokunulmazlık (opsiyonel)
+        print(f"[Wall] Damage taken! HP={self.hp}")
         return self.hp <= 0
 
 
@@ -287,6 +287,11 @@ class Wall(Entity):
             return (118, 122, 122)  # #767a7a
 
         return (255, 0, 255)
+    
+    def update(self, dt, world):
+        if self.invuln_time > 0:
+            self.invuln_time = max(0.0, self.invuln_time - dt)
+
 
     def draw(self, s):
         base = self._base_color()
