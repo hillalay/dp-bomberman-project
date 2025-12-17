@@ -25,11 +25,18 @@ class Renderer:
         for pu in getattr(world, "powerups", []):
             pu.draw(self.screen)
 
-        # 4) Oyuncu
+        
+        # 4) Enemies
+        for e in getattr(world, "enemies", []):
+            e.draw(self.screen)
+
+
+
+        # 5) Oyuncu
         if world.player is not None:
             world.player.draw(self.screen)
 
-        # 5) Patlamalar (ileride eklenecek)
+        # 6) Patlamalar (ileride eklenecek)
         explosions = getattr(world, "explosions", [])
         for exp in explosions:
             exp.draw(self.screen)

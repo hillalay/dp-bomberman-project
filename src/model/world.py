@@ -2,6 +2,9 @@ import random
 from factory.entity_factory import EntityFactory
 from model.entities import WallType
 from factory.powerup_factory import PowerUpFactory
+from model.enemy import Enemy
+from model.ai.move_strategies import RandomMoveStrategy, ChasePlayerStrategy
+
 
 
 class World:
@@ -18,8 +21,15 @@ class World:
         self.powerups=[]
         self.powerup_factory = PowerUpFactory(config)
 
+        self.enemies = []
 
         self._build_level()
+        ts = self.config.TILE_SIZE
+        # 1 random enemy
+        self.enemies.append(Enemy(3, 3, ts, strategy=RandomMoveStrategy()))
+        # 1 chase enemy
+        self.enemies.append(Enemy(self.config.GRID_WIDTH - 3, self.config.GRID_HEIGHT - 3, ts, strategy=ChasePlayerStrategy()))
+
 
     def _build_level(self):
         gw, gh = self.config.GRID_WIDTH, self.config.GRID_HEIGHT
@@ -116,6 +126,12 @@ class World:
 
     def update(self, dt):
         self.player.update(dt, self)
+
+        for e in self.enemies:
+            e.update(dt, self)
+            if e.rect.colliderect(self.player.rect):
+                self.player.take_damage(1)
+
 
         for bomb in list(self.bombs):
             bomb.update(dt, self)
@@ -285,4 +301,10 @@ class World:
             
             if not self.player.alive:
                 print("[World] Player killed by explosion!")
+
+def is_tile_free(self, gx, gy) -> bool:
+    ts = self.config.TILE_SIZE
+    r = pygame.Rect(gx*ts, gy*ts, ts, ts)
+    return (not self.collides_with_solid(r)) and (not r.colliderect(self.player.rect))
+
  
