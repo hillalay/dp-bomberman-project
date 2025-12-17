@@ -124,7 +124,17 @@ class World:
         for pu in list(self.powerups):
             if pu.rect.colliderect(self.player.rect):
                 pu.apply(self.player)
+                if hasattr(self.config, "game"):
+                    self.config.game.score += 5
                 self.powerups.remove(pu)
+            if hasattr(self.config, "game"):
+                self.config.game.score += 5
+
+         # WIN: kırılabilir duvar kalmadıysa
+        breakable_left = any(getattr(w, "wall_type", None) == WallType.BREAKABLE for w in self.walls)
+        if not breakable_left and hasattr(self.config, "game"):
+                self.config.game.on_win()
+
 
     def draw(self, s):
         # Eğer Renderer kullanmıyorsan, buradan da çizebilirsin.
@@ -252,6 +262,8 @@ class World:
 
         # Sadece BREAKABLE duvarlardan power-up çıksın
             if getattr(wall, "wall_type", None) == WallType.BREAKABLE:
+                if hasattr(self.config, "game"):
+                    self.config.game.score += 10
                 pu = self.powerup_factory.maybe_spawn(wx, wy)
                 if pu is not None:
                     self.powerups.append(pu)

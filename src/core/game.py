@@ -36,6 +36,12 @@ class Game:
         # Config & ekran
         # -------------------------
         self.config = GameConfig.get_instance()
+        # World içinden skora erişmek için
+        self.config.game = self
+
+        # Sprint 4: skor tek kaynak
+        self.score = 0
+
         self.screen = pygame.display.set_mode(
             (self.config.SCREEN_WIDTH, self.config.SCREEN_HEIGHT)
         )
@@ -114,9 +120,13 @@ class Game:
         return user
     
     def start_new_game(self) -> None:
-        # Yeni oyun başlatır (State'ler bunu çağırır).
-        # World resetlenir; böylece player tekrar alive olur.
-        self.world =World(self.config)
+        self.score = 0
+        self.world = World(self.config)
+
+    def on_win(self) -> None:
+        from states.win import WinState
+        self.set_state(WinState(self))
+
 
 
 

@@ -129,10 +129,11 @@ class AuthState(GameState):
 
         if uid is None:
             raise ValueError("User id could not be determined from repo result.")
-
-        self.game.active_user_id = uid
+        
+        self.game.current_user_id = uid
         if uname is not None:
-            setattr(self.game, "active_username", uname)
+            self.game.current_username = uname
+
 
     def _go_next(self) -> None:
         """
