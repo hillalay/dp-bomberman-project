@@ -1,4 +1,5 @@
 import random
+import pygame
 from factory.entity_factory import EntityFactory
 from model.entities import WallType
 from factory.powerup_factory import PowerUpFactory
@@ -159,6 +160,13 @@ class World:
 
     def collides_with_solid(self, rect):
         return any(rect.colliderect(w.rect) for w in self.walls)
+    
+    def is_solid_cell(self, gx: int, gy: int) -> bool:
+        ts = self.config.TILE_SIZE
+        cell_rect = pygame.Rect(gx * ts, gy * ts, ts, ts)
+        return any(cell_rect.colliderect(w.rect) for w in self.walls)
+
+
     
     def _get_wall_at(self, gx:int, gy:int):
         """

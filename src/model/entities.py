@@ -136,6 +136,10 @@ class Player(Entity):
         self.hp = 3
         self.alive = True
         self.invuln_time = 0.0  # opsiyonel
+        self.invincible = False
+        self.inv_timer = 0.0
+        self.inv_duration = 0.8  # saniye
+
 
         # --- HITBOX KÜÇÜLTME ---
         # Tile 32x32 ise shrink=8 → 24x24 oyuncu
@@ -172,6 +176,8 @@ class Player(Entity):
         self.state.enter()
 
     def take_damage(self,amount:int=1):
+        if self.invincible:
+            return
         if not self.alive:
             return
         if self.invuln_time >0:
@@ -180,12 +186,19 @@ class Player(Entity):
         self.invuln_time =1.0
         print(f"[Player] Damage taken! HP={self.hp}")
 
+        self.invincible = True
+        self.inv_timer = self.inv_duration
+
         if self.hp <=0:
             self.alive=False
             print("[Player] DEAD")
 
 
     def update(self, dt, world):
+        if self.invincible:
+            self.inv_timer -= dt
+        if self.inv_timer <= 0:
+            self.invincible = False
         # Önce state'i güncelle (örneğin SpeedBoost süresi azalacak)
         if self.invuln_time >0:
             self.invuln_time -=dt
@@ -206,7 +219,14 @@ class Player(Entity):
                 self.rect = new_rect
 
     def draw(self, s):
+        # BLINK KONTROLÜ ÖNCE
+        if self.invincible:
+            if int(pygame.time.get_ticks() / 100) % 2 == 0:
+                return
+
         pygame.draw.rect(s, self.color, self.rect)
+
+
 
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import pygame
+import random
 from typing import Optional
 
 from model.ai.move_strategies import IMoveStrategy, RandomMoveStrategy
@@ -11,6 +12,8 @@ class Enemy:
         self.ts = tile_size
         self.rect = pygame.Rect(x * tile_size, y * tile_size, tile_size, tile_size)
 
+        self._last_dir = (0, 0)
+
         self.speed_tiles = speed
         self.strategy: IMoveStrategy = strategy or RandomMoveStrategy()
 
@@ -19,7 +22,8 @@ class Enemy:
         self._target_px = self.rect.topleft  # hedef pixel (tile köşesi)
 
         self._rethink_timer = 0.0
-        self._rethink_interval = 0.2
+        self._rethink_interval = 1.0 / max(1e-6, self.speed_tiles)
+
 
     def draw(self, screen: pygame.Surface) -> None:
         pygame.draw.rect(screen, (220, 70, 70), self.rect)
@@ -37,8 +41,27 @@ class Enemy:
 
     def _can_step(self, world, dx: int, dy: int) -> bool:
         gx, gy = self.grid_pos()
-        nxt = self._tile_rect(gx + dx, gy + dy)
-        return not world.collides_with_solid(nxt)
+        return not world.is_solid_cell(gx + dx, gy + dy)
+
+
+        
+    def _reverse_of(self, d: tuple[int,int]) -> tuple[int,int]:
+        return (-d[0], -d[1])
+
+    def valid_dirs(self, world, avoid_reverse: bool = True) -> list[tuple[int,int]]:
+        dirs = [(1,0), (-1,0), (0,1), (0,-1)]
+        out = []
+        rev = self._reverse_of(self._last_dir)
+
+        for d in dirs:
+            if d == (0,0):
+                continue
+            if avoid_reverse and self._last_dir != (0,0) and d == rev:
+                continue
+            if self._can_step(world, d[0], d[1]):
+                out.append(d)
+        return out
+
 
     def _start_step(self, world, dx: int, dy: int) -> bool:
         if dx == 0 and dy == 0:
@@ -50,24 +73,19 @@ class Enemy:
         self._dir = (dx, dy)
         self._target_px = ((gx + dx) * self.ts, (gy + dy) * self.ts)
         self._moving = True
+        self._last_dir = (dx, dy)
+
         return True
 
     def update(self, dt: float, world) -> None:
-        # Tile merkezine/kenarına oturt
-        if not self._moving:
-            self._snap_to_tile()
-
-        # Hareket halindeyken hedefe ilerle
+        # 1️⃣ Hareket halindeyse hedefe ilerle
         if self._moving:
             speed_px = self.speed_tiles * self.ts * dt
             cx, cy = self.rect.topleft
             tx, ty = self._target_px
 
-            # X yaklaş
             if cx < tx: cx = min(tx, cx + speed_px)
             if cx > tx: cx = max(tx, cx - speed_px)
-
-            # Y yaklaş
             if cy < ty: cy = min(ty, cy + speed_px)
             if cy > ty: cy = max(ty, cy - speed_px)
 
@@ -75,18 +93,37 @@ class Enemy:
 
             if self.rect.topleft == self._target_px:
                 self._moving = False
-            return
+            return  # 🔴 çok önemli
 
-        # Yeni karar verme (tile üstündeyken)
+        # 2️⃣ Tile’a hizala (hareket bitince)
+        self._snap_to_tile()
+
+        # 3️⃣ Karar verme timer
         self._rethink_timer += dt
         if self._rethink_timer < self._rethink_interval:
             return
         self._rethink_timer = 0.0
 
+
+        # 4️⃣ Strategy kararı
         dx, dy = self.strategy.choose_dir(self, world)
 
-        # Seçilen yön olmazsa: alternatif dene (takılma kesilir)
+        # 5️⃣ Önce strategy yönü
         if not self._start_step(world, dx, dy):
-            for adx, ady in [(1,0), (-1,0), (0,1), (0,-1)]:
+            # Reverse hariç alternatifler
+            options = self.valid_dirs(world, avoid_reverse=True)
+            random.shuffle(options)
+            moved = False
+            for adx, ady in options:
                 if self._start_step(world, adx, ady):
+                    moved = True
                     break
+
+            # Dead-end → reverse dahil
+            if not moved:
+                options = self.valid_dirs(world, avoid_reverse=False)
+                random.shuffle(options)
+                for adx, ady in options:
+                    if self._start_step(world, adx, ady):
+                        break
+
