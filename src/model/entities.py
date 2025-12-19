@@ -1,4 +1,5 @@
 import pygame
+import os
 from enum import Enum, auto
 from dataclasses import dataclass
 from typing import Callable, Dict, Any, List, Tuple, DefaultDict
@@ -6,6 +7,8 @@ from collections import defaultdict
 from abc import ABC, abstractmethod
 from model.player_state import PlayerState, NormalState, SpeedBoostState
 from core.event_bus import EventBus, EventType, Event
+from core.explosion_strategy import ExplosionStrategy, NormalExplosionStrategy
+
 
 
 # ====================================================
@@ -47,44 +50,6 @@ class ExplosionStrategy(ABC):
         raise NotImplementedError
 
 
-class NormalExplosionStrategy(ExplosionStrategy):
-    """
-    Klasik Bomberman patlaması:
-    - Ortadan 4 yöne (sağ, sol, yukarı, aşağı)
-    - Şimdilik duvarları dikkate almıyor, sadece map sınırına kadar gidiyor.
-      (Duvar kırma / bloklama logic'ini world.handle_explosion içinde
-       ya da daha sonra gelişmiş bir strategy içinde ele alırsın.)
-    """
-
-    DIRECTIONS: List[GridPos] = [
-        (1, 0),   # sağ
-        (-1, 0),  # sol
-        (0, -1),  # yukarı
-        (0, 1),   # aşağı
-    ]
-
-    def compute_tiles(
-        self,
-        origin: GridPos,
-        power: int,
-        grid_width: int,
-        grid_height: int,
-    ) -> List[GridPos]:
-        gx, gy = origin
-        tiles: List[GridPos] = [origin]  # merkez tile her zaman var
-
-        for dx, dy in self.DIRECTIONS:
-            for step in range(1, power + 1):
-                nx = gx + dx * step
-                ny = gy + dy * step
-
-                # Map dışına çıkma
-                if nx < 0 or ny < 0 or nx >= grid_width or ny >= grid_height:
-                    break
-
-                tiles.append((nx, ny))
-
-        return tiles
 
 
 # ====================================================
@@ -195,36 +160,93 @@ class Player(Entity):
 
 
     def update(self, dt, world):
+        # --- invincibility timer ---
         if self.invincible:
             self.inv_timer -= dt
-        if self.inv_timer <= 0:
-            self.invincible = False
-        # Önce state'i güncelle (örneğin SpeedBoost süresi azalacak)
-        if self.invuln_time >0:
-            self.invuln_time -=dt
-            if self.invuln_time <0:
-                self.invuln_time =0
-        # statei güncelle
+            if self.inv_timer <= 0:
+                self.invincible = False
+
+        # --- opsiyonel invuln_time (istersen bunu tamamen kaldırabilirsin) ---
+        if self.invuln_time > 0:
+            self.invuln_time -= dt
+            if self.invuln_time < 0:
+                self.invuln_time = 0
+
+        # state update
         if self.state is not None:
             self.state.update(dt)
 
-        # Hareket
-        if self.move_dir.length_squared() > 0:
-            speed=self.state.get_speed() if self.state is not None else self.base_speed
+        # moving flag (anim için)
+        self.moving = self.move_dir.length_squared() > 0
 
+        # Hareket
+        if self.moving:
+            speed = self.state.get_speed() if self.state is not None else self.base_speed
             move = self.move_dir.normalize() * speed * dt
             new_rect = self.rect.move(move.x, move.y)
 
             if not world.collides_with_solid(new_rect):
                 self.rect = new_rect
 
+
+            # Hareket
+            if self.move_dir.length_squared() > 0:
+                speed=self.state.get_speed() if self.state is not None else self.base_speed
+
+                move = self.move_dir.normalize() * speed * dt
+                new_rect = self.rect.move(move.x, move.y)
+
+                if not world.collides_with_solid(new_rect):
+                    self.rect = new_rect
+
     def draw(self, s):
-        # BLINK KONTROLÜ ÖNCE
         if self.invincible:
-            if int(pygame.time.get_ticks() / 100) % 2 == 0:
+            if (pygame.time.get_ticks() // 100) % 2 == 0:
                 return
 
-        pygame.draw.rect(s, self.color, self.rect)
+        frame = (pygame.time.get_ticks() // 120) % 3 if self.moving else 1
+        letter = self._dir_to_letter()
+        code = f"p{letter}{frame}"
+
+        img = Player._load_player_sprite(code, (self.rect.width, self.rect.height))
+        s.blit(img, self.rect)
+
+
+
+    PLAYER_SPRITE_BASE = os.path.join(
+        os.path.dirname(__file__),
+        "..", "..",
+        "assets", "sprites", "player"
+    )
+
+    _PLAYER_SPRITE_CACHE = {}
+
+    @staticmethod
+    def _load_player_sprite(code: str, size: tuple[int, int]) -> pygame.Surface:
+        key = (code, size)
+        if key not in Player._PLAYER_SPRITE_CACHE:
+            path = os.path.join(Player.PLAYER_SPRITE_BASE, f"{code}.png")
+            img = pygame.image.load(path).convert_alpha()
+            img = pygame.transform.scale(img, size)
+            Player._PLAYER_SPRITE_CACHE[key] = img
+        return Player._PLAYER_SPRITE_CACHE[key]
+    
+    def _dir_to_letter(self) -> str:
+        dx, dy = float(self.move_dir.x), float(self.move_dir.y)
+
+        # Hareket yoksa son yöne göre bak (yoksa front)
+        if dx == 0 and dy == 0:
+            return getattr(self, "facing", "f")
+
+        # baskın eksene göre yön seç
+        if abs(dx) >= abs(dy):
+            self.facing = "r" if dx > 0 else "l"
+        else:
+            self.facing = "f" if dy > 0 else "b"
+
+        return self.facing
+
+
 
 
 
@@ -494,11 +516,22 @@ class Bomb(Entity):
     - EventBus ile BOMB_PLACED / BOMB_EXPLODED event'leri yayınlar (Observer).
     """
 
+    ASSET_BASE = os.path.join(
+        os.path.dirname(__file__),
+        "..", "..",
+        "assets", "sprites", "bomb"
+    )
+
+    _BOMB_CACHE = {}
+
     def __init__(self, x, y, owner, config):
         super().__init__(x, y, config)
+        self.placed_ms = pygame.time.get_ticks()
         self.owner = owner
         self.timer = config.BOMB_TIMER  # dt saniye ise bu da saniye
         self.color = self.config.COLOR_BOMB
+        self.explosion_strategy: ExplosionStrategy = NormalExplosionStrategy()
+
 
         # --- Bomba menzili ---
         # Owner'ın bomb_power özelliği varsa onu kullan, yoksa config'deki default'u al.
@@ -556,18 +589,14 @@ class Bomb(Entity):
         tiles = [(gx, gy)]
 
         # --- Strategy Pattern: patlama alanını hesapla ---
-        try:
-            gw = getattr(self.config, "GRID_WIDTH", 15)
-            gh = getattr(self.config, "GRID_HEIGHT", 13)
+        tiles = self.explosion_strategy.compute_tiles(
+            origin=(gx, gy),
+            power=self.power,
+            is_blocking=lambda pos: world.is_blocking(pos),
+            is_breakable=lambda pos: world.is_breakable(pos),
+)
 
-            tiles = self.explosion_strategy.compute_tiles(
-                origin=(gx, gy),
-                power=self.power,
-                grid_width=gw,
-                grid_height=gh,
-            )
-        except Exception as e:
-            print("[ERROR] ExplosionStrategy sırasında hata:", repr(e))
+
 
         # 🔥 Asıl kritik: patlayan tile'ları world'e yolla
         try:
@@ -590,9 +619,56 @@ class Bomb(Entity):
         except Exception as e:
             print("[ERROR] BOMB_EXPLODED event sırasında hata:", repr(e))
 
-    def draw(self, s):
-        pygame.draw.rect(s, self.color, self.rect)
+    @staticmethod
+    def _load_bomb(frame, size):
+        key = (frame, size)
+        if key not in Bomb._BOMB_CACHE:
+            path = os.path.join(Bomb.ASSET_BASE, f"bomb_{frame}.png")
+            img = pygame.image.load(path).convert_alpha()
+            img = pygame.transform.scale(img, size)
+            Bomb._BOMB_CACHE[key] = img
+        return Bomb._BOMB_CACHE[key]
 
+
+    def draw(self, s):
+        elapsed = pygame.time.get_ticks() - self.placed_ms
+        frame = (elapsed // 150) % 3
+        img = Bomb._load_bomb(frame, (self.rect.width, self.rect.height))
+        s.blit(img, self.rect)
+
+
+class ExplosionFX:
+    EXP_BASE = os.path.join(
+        os.path.dirname(__file__),
+        "..", "..",
+        "assets", "sprites", "explosion"
+    )
+    _CACHE = {}
+
+    def __init__(self, x_px: int, y_px: int, size: int, duration: float = 0.35):
+        self.rect = pygame.Rect(x_px, y_px, size, size)
+        self.start_ms = pygame.time.get_ticks()
+        self.duration_ms = int(duration * 1000)
+
+    @staticmethod
+    def _load(code: str, size: tuple[int, int]) -> pygame.Surface:
+        key = (code, size)
+        if key not in ExplosionFX._CACHE:
+            path = os.path.join(ExplosionFX.EXP_BASE, f"{code}.png")
+            img = pygame.image.load(path).convert_alpha()
+            img = pygame.transform.scale(img, size)
+            ExplosionFX._CACHE[key] = img
+        return ExplosionFX._CACHE[key]
+
+    def alive(self) -> bool:
+        return (pygame.time.get_ticks() - self.start_ms) < self.duration_ms
+
+    def draw(self, s: pygame.Surface):
+        elapsed = pygame.time.get_ticks() - self.start_ms
+        frame = (elapsed // 80) % 3   # 80ms/frame => hızlı patlama hissi
+        code = f"ex{frame}"
+        img = ExplosionFX._load(code, (self.rect.w, self.rect.h))
+        s.blit(img, self.rect)
 
 # --- POWERUP ------------------------------------------------------
 class PowerUp(Entity):

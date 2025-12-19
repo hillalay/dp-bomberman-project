@@ -5,6 +5,7 @@ from model.entities import WallType
 from factory.powerup_factory import PowerUpFactory
 from model.enemy import Enemy
 from model.ai.move_strategies import RandomMoveStrategy, ChasePlayerStrategy
+from model.entities import ExplosionFX
 
 
 
@@ -24,12 +25,42 @@ class World:
 
         self.enemies = []
 
+        self.explosions_fx = []
+
         self._build_level()
         ts = self.config.TILE_SIZE
-        # 1 random enemy
-        self.enemies.append(Enemy(3, 3, ts, strategy=RandomMoveStrategy()))
-        # 1 chase enemy
-        self.enemies.append(Enemy(self.config.GRID_WIDTH - 3, self.config.GRID_HEIGHT - 3, ts, strategy=ChasePlayerStrategy()))
+        
+        ts = self.config.TILE_SIZE
+
+        # Enemy spawn noktaları (grid koordinatı)
+        enemy_spawns = [
+            (self.config.GRID_WIDTH - 2, self.config.GRID_HEIGHT - 2),
+            (self.config.GRID_WIDTH - 3, self.config.GRID_HEIGHT - 2),
+        ]
+
+        self.enemies.append(
+            Enemy(
+                enemy_spawns[0][0],
+                enemy_spawns[0][1],
+                ts,
+                strategy=RandomMoveStrategy(),
+                enemy_type=1
+            )
+        )
+
+        self.enemies.append(
+            Enemy(
+                enemy_spawns[1][0],
+                enemy_spawns[1][1],
+                ts,
+                strategy=ChasePlayerStrategy(),
+                enemy_type=2
+            )
+        )
+
+
+        print("Spawned enemy type:", self.enemies[-1].enemy_type)
+
 
 
     def _build_level(self):
@@ -121,6 +152,21 @@ class World:
                         )
                     )
 
+    def is_blocking(self, pos):
+        gx, gy = pos
+        if gx < 0 or gy < 0 or gx >= self.config.GRID_WIDTH or gy >= self.config.GRID_HEIGHT:
+            return True
+        return self.is_solid_cell(gx, gy)
+
+    def is_breakable(self, pos):
+        gx, gy = pos
+        ts = self.config.TILE_SIZE
+        r = pygame.Rect(gx * ts, gy * ts, ts, ts)
+        # breakable duvarlarını nasıl tutuyorsan ona göre:
+        return any(getattr(w, "breakable", False) and w.rect.colliderect(r) for w in self.walls)
+
+
+
     # -------------------------
     # GAME LOOP API
     # -------------------------
@@ -136,6 +182,10 @@ class World:
 
         for bomb in list(self.bombs):
             bomb.update(dt, self)
+
+        # explosion FX cleanup
+        self.explosions_fx = [fx for fx in self.explosions_fx if fx.alive()]
+
 
         # Player power-up aldı mı?
         for pu in list(self.powerups):
@@ -204,115 +254,145 @@ class World:
         self.bombs.append(bomb)
 
     def handle_explosion(self, bomb, tiles=None):
-        
-        ts = self.config.TILE_SIZE
+            
+            print("[World] handle_explosion called, bomb in bombs:", hasattr(self,"bombs") and (bomb in self.bombs))
 
-    # Bombanın grid koordinatı
-        gx = bomb.rect.x // ts
-        gy = bomb.rect.y // ts
+            ts = self.config.TILE_SIZE
+        # Bombanın grid koordinatı
+            gx = bomb.rect.x // ts
+            gy = bomb.rect.y // ts
 
-    # Bomba gücü (menzil)
-        power = getattr(bomb, "power", 2)
+        # Bomba gücü (menzil)
+            power = getattr(bomb, "power", 2)
 
-        destroyed_walls = []
+            destroyed_walls = []
 
-    # Patlama alanını SET olarak tut (duvar bloklaması sonrası gerçek alan)
-        blast_tiles = set(tiles) if tiles else set()
-        blast_tiles.add((gx, gy))  # merkez her zaman etkilenir
+        # Patlama alanını SET olarak tut (duvar bloklaması sonrası gerçek alan)
+            blast_tiles = set(tiles) if tiles else set()
+            blast_tiles.add((gx, gy))  # merkez her zaman etkilenir
 
-    # --- Merkez tile'da duvar varsa önce onu kontrol et ---
-        center_wall = self._get_wall_at(gx, gy)
-        if center_wall is not None:
-            if getattr(center_wall, "wall_type", None) != WallType.UNBREAKABLE:
-                if hasattr(center_wall, "take_damage"):
-                    if center_wall.take_damage():
-                        destroyed_walls.append(center_wall)
-                else:
-                    if getattr(center_wall, "wall_type", None) == WallType.BREAKABLE:
-                        destroyed_walls.append(center_wall)
+            ts = self.config.TILE_SIZE
+            for (tx, ty) in blast_tiles:
+                self.explosions_fx.append(ExplosionFX(tx * ts, ty * ts, ts))
 
-    # --- Dört yöne doğru yayıl (duvar bloklama burada) ---
-        directions = [
-            (1, 0),   # sağ
-            (-1, 0),  # sol
-            (0, -1),  # yukarı
-            (0, 1),   # aşağı
-            ]
-        
-        gw, gh = self.config.GRID_WIDTH, self.config.GRID_HEIGHT
-        
-        for dx, dy in directions:
-            for step in range(1, power + 1):
-                nx = gx + dx * step
-                ny = gy + dy * step
 
-            # Harita dışı
-                if nx < 0 or ny < 0 or nx >= gw or ny >= gh:
-                    break
+        # --- Merkez tile'da duvar varsa önce onu kontrol et ---
+            center_wall = self._get_wall_at(gx, gy)
+            if center_wall is not None:
+                if getattr(center_wall, "wall_type", None) != WallType.UNBREAKABLE:
+                    if hasattr(center_wall, "take_damage"):
+                        if center_wall.take_damage():
+                            destroyed_walls.append(center_wall)
+                    else:
+                        if getattr(center_wall, "wall_type", None) == WallType.BREAKABLE:
+                            destroyed_walls.append(center_wall)
 
-                wall = self._get_wall_at(nx, ny)
+        # --- Dört yöne doğru yayıl (duvar bloklama burada) ---
+            directions = [
+                (1, 0),   # sağ
+                (-1, 0),  # sol
+                (0, -1),  # yukarı
+                (0, 1),   # aşağı
+                ]
+            
+            gw, gh = self.config.GRID_WIDTH, self.config.GRID_HEIGHT
 
-            # Boş tile -> patlama etkiler, devam eder
-                if wall is None:
+            ts = self.config.TILE_SIZE
+            for (tx, ty) in tiles:
+                self.explosions_fx.append(ExplosionFX(tx * ts, ty * ts, ts))
+
+            if bomb in self.bombs:
+                self.bombs.remove(bomb)
+
+            
+            for dx, dy in directions:
+                for step in range(1, power + 1):
+                    nx = gx + dx * step
+                    ny = gy + dy * step
+
+                # Harita dışı
+                    if nx < 0 or ny < 0 or nx >= gw or ny >= gh:
+                        break
+
+                    wall = self._get_wall_at(nx, ny)
+
+                # Boş tile -> patlama etkiler, devam eder
+                    if wall is None:
+                        blast_tiles.add((nx, ny))
+                        continue
+
+                # Duvarın olduğu tile'a kadar patlama gelir
                     blast_tiles.add((nx, ny))
-                    continue
 
-            # Duvarın olduğu tile'a kadar patlama gelir
-                blast_tiles.add((nx, ny))
+                # UNBREAKABLE -> hasar yok, bu yönde dur
+                    if getattr(wall, "wall_type", None) == WallType.UNBREAKABLE:
+                        break
 
-            # UNBREAKABLE -> hasar yok, bu yönde dur
-                if getattr(wall, "wall_type", None) == WallType.UNBREAKABLE:
+                # HARD / BREAKABLE -> hasar ver (varsa take_damage)
+                    if hasattr(wall, "take_damage"):
+                        destroyed = wall.take_damage()
+                    else:
+                        destroyed = (getattr(wall, "wall_type", None) == WallType.BREAKABLE)
+
+                    if destroyed:
+                        destroyed_walls.append(wall)
+
+                # Duvar gördükten sonra patlama o yönde devam etmez
                     break
+    # --- Duvarları sil + breakable'lardan power-up dene ---
+                
+            for wall in destroyed_walls:
+                wx = wall.rect.x // ts
+                wy = wall.rect.y // ts
 
-            # HARD / BREAKABLE -> hasar ver (varsa take_damage)
-                if hasattr(wall, "take_damage"):
-                    destroyed = wall.take_damage()
-                else:
-                    destroyed = (getattr(wall, "wall_type", None) == WallType.BREAKABLE)
+                if wall in self.walls:
+                    self.walls.remove(wall)
 
-                if destroyed:
-                    destroyed_walls.append(wall)
+            # Sadece BREAKABLE duvarlardan power-up çıksın
+                if getattr(wall, "wall_type", None) == WallType.BREAKABLE:
+                    if hasattr(self.config, "game"):
+                        self.config.game.score += 10
+                    pu = self.powerup_factory.maybe_spawn(wx, wy)
+                    if pu is not None:
+                        self.powerups.append(pu)
 
-            # Duvar gördükten sonra patlama o yönde devam etmez
-                break
-# --- Duvarları sil + breakable'lardan power-up dene ---
-            
-        for wall in destroyed_walls:
-            wx = wall.rect.x // ts
-            wy = wall.rect.y // ts
+            # --- Bombayı listeden sil ---
+            if bomb in self.bombs:
+                self.bombs.remove(bomb)
 
-            if wall in self.walls:
-                self.walls.remove(wall)
+    # -------------------------
+    # 💥 PLAYER HIT CHECK
+    # -------------------------
+            ts = self.config.TILE_SIZE
+            px = self.player.rect.centerx // ts
+            py = self.player.rect.centery // ts
 
-        # Sadece BREAKABLE duvarlardan power-up çıksın
-            if getattr(wall, "wall_type", None) == WallType.BREAKABLE:
-                if hasattr(self.config, "game"):
-                    self.config.game.score += 10
-                pu = self.powerup_factory.maybe_spawn(wx, wy)
-                if pu is not None:
-                    self.powerups.append(pu)
+            if (px, py) in blast_tiles:
+                damage = getattr(self.config, "BOMB_DAMAGE", 1)
+                self.player.take_damage(damage)
+                
+                if not self.player.alive:
+                    print("[World] Player killed by explosion!")
 
-        # --- Bombayı listeden sil ---
-        if bomb in self.bombs:
-            self.bombs.remove(bomb)
+            # --- bomb cleanup (mutlaka) ---
+            try:
+                if hasattr(self, "bombs") and bomb in self.bombs:
+                    self.bombs.remove(bomb)
+            except Exception as e:
+                print("[ERROR] bomb cleanup:", repr(e))
 
-# -------------------------
-# 💥 PLAYER HIT CHECK
-# -------------------------
+            # owner bomb sayısını düşürüyorsan (sende varsa)
+            try:
+                if hasattr(bomb.owner, "active_bombs") and bomb.owner.active_bombs > 0:
+                    bomb.owner.active_bombs -= 1
+            except Exception:
+                pass
+
+
+    def is_tile_free(self, gx, gy) -> bool:
         ts = self.config.TILE_SIZE
-        px = self.player.rect.centerx // ts
-        py = self.player.rect.centery // ts
+        r = pygame.Rect(gx*ts, gy*ts, ts, ts)
+        return (not self.collides_with_solid(r)) and (not r.colliderect(self.player.rect))
 
-        if (px, py) in blast_tiles:
-            damage = getattr(self.config, "BOMB_DAMAGE", 1)
-            self.player.take_damage(damage)
-            
-            if not self.player.alive:
-                print("[World] Player killed by explosion!")
-
-def is_tile_free(self, gx, gy) -> bool:
-    ts = self.config.TILE_SIZE
-    r = pygame.Rect(gx*ts, gy*ts, ts, ts)
-    return (not self.collides_with_solid(r)) and (not r.colliderect(self.player.rect))
-
- 
+   
+    

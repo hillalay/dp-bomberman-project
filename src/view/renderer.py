@@ -30,16 +30,14 @@ class Renderer:
         for e in getattr(world, "enemies", []):
             e.draw(self.screen)
 
-
-
         # 5) Oyuncu
         if world.player is not None:
             world.player.draw(self.screen)
 
-        # 6) Patlamalar (ileride eklenecek)
-        explosions = getattr(world, "explosions", [])
-        for exp in explosions:
-            exp.draw(self.screen)
+        # 6) Patlamalar 
+        for fx in world.explosions_fx:
+            fx.draw(self.screen)
+
 
     def _draw_grass_background(self):
         """
