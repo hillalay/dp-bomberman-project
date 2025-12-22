@@ -108,7 +108,7 @@ class Player(Entity):
 
         # --- HITBOX KÜÇÜLTME ---
         # Tile 32x32 ise shrink=8 → 24x24 oyuncu
-        shrink = 8
+        shrink = 14
         self.rect.inflate_ip(-shrink, -shrink)
 
         # -----------------------
@@ -123,8 +123,13 @@ class Player(Entity):
         #Bombanın patlama menzili
         self.bomb_power = getattr(self.config,"BOMB_POWER",2)
 
+        self.moving = False
+        self.facing = "f"
+
 
         self.move_dir = pygame.Vector2(0, 0)
+        self.moving = False
+        self.facing="f" # idle bakış yönü default (front)
 
         # ---- STATE PATTERN ----
         # Player'ın current state'i (NormalState ile başlıyoruz)
@@ -160,6 +165,10 @@ class Player(Entity):
 
 
     def update(self, dt, world):
+        if not self.alive:
+            self.moving = False
+            self.move_dir.update(0, 0)
+            return
         # --- invincibility timer ---
         if self.invincible:
             self.inv_timer -= dt
@@ -183,23 +192,23 @@ class Player(Entity):
         if self.moving:
             speed = self.state.get_speed() if self.state is not None else self.base_speed
             move = self.move_dir.normalize() * speed * dt
-            new_rect = self.rect.move(move.x, move.y)
 
-            if not world.collides_with_solid(new_rect):
-                self.rect = new_rect
-
-
-            # Hareket
-            if self.move_dir.length_squared() > 0:
-                speed=self.state.get_speed() if self.state is not None else self.base_speed
-
-                move = self.move_dir.normalize() * speed * dt
-                new_rect = self.rect.move(move.x, move.y)
-
+            # 1) X ekseni
+            if move.x !=0:
+                new_rect = self.rect.move(move.x, 0)
                 if not world.collides_with_solid(new_rect):
                     self.rect = new_rect
 
+            # 2) Y ekseni
+            if move.y !=0:
+                new_rect = self.rect.move(0, move.y)
+                if not world.collides_with_solid(new_rect):
+                    self.rect = new_rect
+
+
     def draw(self, s):
+        if not hasattr(self,"moving"):
+            self.moving = False
         if self.invincible:
             if (pygame.time.get_ticks() // 100) % 2 == 0:
                 return
@@ -684,7 +693,7 @@ class PowerUp(Entity):
         self.kind = kind
 
         # Görsel olarak biraz küçük dursun
-        shrink = self.config.TILE_SIZE // 4
+        shrink = self.config.TILE_SIZE // 3
         self.rect.inflate_ip(-shrink, -shrink)
 
         # Renkleri türüne göre farklı yapalım

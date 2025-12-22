@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pygame
+import os
 from typing import TYPE_CHECKING
 
 from core.config import GameConfig
@@ -42,10 +43,42 @@ class Game:
         # Sprint 4: skor tek kaynak
         self.score = 0
 
-        self.screen = pygame.display.set_mode(
-            (self.config.SCREEN_WIDTH, self.config.SCREEN_HEIGHT)
-        )
-        pygame.display.set_caption("DP Bomberman")
+        self.mode=os.environ.get("DP_MODE","local")
+        self.net_host=os.environ.get("DP_HOST","127.0.0.1")
+        self.net_port=int(os.environ.get("DP_PORT","5050"))
+
+
+        if self.mode =="server":
+            self.screen=pygame.Surface((self.config.SCREEN_WIDTH,self.config.SCREEN_HEIGHT))
+
+        else:
+            self.screen = pygame.display.set_mode(
+                (self.config.SCREEN_WIDTH, self.config.SCREEN_HEIGHT)
+            )
+            pygame.display.set_caption("DP Bomberman")
+
+
+        from net.server import GameServer
+        from net.client import GameClient
+        from controller.network_input_proxy import NetworkInputProxy
+
+        
+        self.server = None
+        self.client = None
+        self.net_proxy = None
+
+        if self.mode == "server":
+            self.server = GameServer(self.net_host, self.net_port)
+            self.server.start()  # 2 client bağlanana kadar bekler
+  
+        elif self.mode == "client":
+            self.client = GameClient(self.net_host, self.net_port)
+            self.client.connect()
+
+            self.player_id = getattr(self.client, "player_id", None)
+            self.net_proxy = NetworkInputProxy(self.client)
+
+
 
         # -------------------------
         # Repository Pattern: Users & Preferences
@@ -101,8 +134,13 @@ class Game:
         self.command_mapper = CommandMapper()
 
         # İlk state: Menü
-        from states.menu import MenuState
-        self.current_state: GameState = MenuState(self)
+        if self.mode =="server":
+            from states.playing import PlayingState
+            self.current_state: GameState = PlayingState(self)
+
+        else:
+            from states.menu import MenuState
+            self.current_state: GameState = MenuState(self)
         self.current_state.enter()
 
     # Aktif user yoksa player1 oluştur
@@ -138,6 +176,19 @@ class Game:
 
     # ANA LOOP
     def run(self):
+        # SERVER: event/render yok, sadece update + snapshot
+        if getattr(self, "mode", "local") == "server":
+            while self.running:
+                dt = self.clock.tick(self.config.FPS) / 1000.0
+                try:
+                    self.current_state.update(dt)
+                except Exception as e:
+                    print("[Server] FATAL in update:", repr(e))
+                    self.running = False
+            pygame.quit()
+            return
+
+    # CLIENT/LOCAL: normal loop
         while self.running:
             dt = self.clock.tick(self.config.FPS) / 1000.0
 
@@ -152,7 +203,7 @@ class Game:
 
             self.current_state.update(dt)
             self.current_state.render(self.screen)
-
             pygame.display.flip()
-
+            
         pygame.quit()
+

@@ -15,7 +15,11 @@ class World:
         self.factory = EntityFactory(config)
 
         # Oyuncu başlangıç tile'ı
-        self.player = self.factory.create("player", x=1, y=1)
+        self.players={}
+        self.players[1] = self.factory.create("player", x=1, y=1)
+        self.players[2]=self.factory.create("player",x=2,y=1)
+
+        self.player=self.players[1]  # tek oyunculu için
 
         self.walls = []
         self.bombs = []
@@ -172,12 +176,14 @@ class World:
     # -------------------------
 
     def update(self, dt):
-        self.player.update(dt, self)
+        for p in self.players.values():
+            p.update(dt, self)
 
         for e in self.enemies:
             e.update(dt, self)
-            if e.rect.colliderect(self.player.rect):
-                self.player.take_damage(1)
+            for p in self.players.values():
+                if e.rect.colliderect(p.rect):
+                    p.take_damage(1)
 
 
         for bomb in list(self.bombs):
@@ -187,15 +193,14 @@ class World:
         self.explosions_fx = [fx for fx in self.explosions_fx if fx.alive()]
 
 
-        # Player power-up aldı mı?
         for pu in list(self.powerups):
-            if pu.rect.colliderect(self.player.rect):
-                pu.apply(self.player)
-                if hasattr(self.config, "game"):
-                    self.config.game.score += 5
-                self.powerups.remove(pu)
-            if hasattr(self.config, "game"):
-                self.config.game.score += 5
+            for p in self.players.values():
+                if pu.rect.colliderect(p.rect):
+                    pu.apply(p)
+                    if hasattr(self.config,"game"):
+                        self.config.game.score +=5
+                        self.powerups.remove(pu)
+                        break
 
          # WIN: kırılabilir duvar kalmadıysa
         breakable_left = any(getattr(w, "wall_type", None) == WallType.BREAKABLE for w in self.walls)
@@ -204,9 +209,12 @@ class World:
 
 
     def draw(self, s):
+        moving = getattr(self, "moving", False)
+        frame = (pygame.time.get_ticks() // 120) % 3 if moving else 1
+
         # Eğer Renderer kullanmıyorsan, buradan da çizebilirsin.
         # Şu an Renderer.draw_world kullanıyoruz, o yüzden burada bir şey yapmıyoruz.
-        pass
+
 
     def collides_with_solid(self, rect):
         return any(rect.colliderect(w.rect) for w in self.walls)
@@ -233,23 +241,25 @@ class World:
     
 
 
-    def place_bomb(self):
+    def place_bomb(self, owner):
+        if owner is None or not getattr(owner, "alive", True):
+            return  # ölü oyuncu bombalayamaz
     # Owner'a ait aktif bombalar
         active = sum(
             1 for b in self.bombs
-            if not b.exploded and b.owner is self.player
+            if not b.exploded and b.owner is owner
             )
-        if active >= self.player.max_bombs:
+        if active >= owner.max_bombs:
             return  # limit dolu
 
-        tile_x = self.player.rect.centerx // self.config.TILE_SIZE
-        tile_y = self.player.rect.centery // self.config.TILE_SIZE
+        tile_x = owner.rect.centerx // self.config.TILE_SIZE
+        tile_y = owner.rect.centery // self.config.TILE_SIZE
         
         bomb = self.factory.create(
             "bomb",
             x=tile_x,
             y=tile_y,
-            owner=self.player,
+            owner=owner,
             )
         self.bombs.append(bomb)
 
@@ -364,15 +374,17 @@ class World:
     # 💥 PLAYER HIT CHECK
     # -------------------------
             ts = self.config.TILE_SIZE
-            px = self.player.rect.centerx // ts
-            py = self.player.rect.centery // ts
 
-            if (px, py) in blast_tiles:
-                damage = getattr(self.config, "BOMB_DAMAGE", 1)
-                self.player.take_damage(damage)
-                
-                if not self.player.alive:
-                    print("[World] Player killed by explosion!")
+            for p in self.players.values():
+                px = p.rect.centerx // ts
+                py = p.rect.centery // ts
+
+                if (px, py) in blast_tiles:
+                    damage = getattr(self.config, "BOMB_DAMAGE", 1)
+                    p.take_damage(damage)
+                    
+                    if not p.alive:
+                        print(f"[World] Player {getattr(p,'id', '?')} killed by explosion!")
 
             # --- bomb cleanup (mutlaka) ---
             try:
@@ -392,7 +404,15 @@ class World:
     def is_tile_free(self, gx, gy) -> bool:
         ts = self.config.TILE_SIZE
         r = pygame.Rect(gx*ts, gy*ts, ts, ts)
-        return (not self.collides_with_solid(r)) and (not r.colliderect(self.player.rect))
+
+        if self.collides_with_solid(r):
+            return False
+        
+        for p in self.players.values():
+            if r.colliderect(p.rect):
+                return False
+            
+        return True
 
    
     
