@@ -25,3 +25,6 @@ class NetworkInputProxy:
                 self.client.send_input("STOP_MOVE", {"axis": "y"})
             elif event.key in (pygame.K_a, pygame.K_LEFT, pygame.K_d, pygame.K_RIGHT):
                 self.client.send_input("STOP_MOVE", {"axis": "x"})
+                
+                
+        

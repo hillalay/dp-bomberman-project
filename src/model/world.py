@@ -34,13 +34,15 @@ class World:
         self._build_level()
         ts = self.config.TILE_SIZE
         
-        ts = self.config.TILE_SIZE
 
         # Enemy spawn noktaları (grid koordinatı)
         enemy_spawns = [
             (self.config.GRID_WIDTH - 2, self.config.GRID_HEIGHT - 2),
             (self.config.GRID_WIDTH - 3, self.config.GRID_HEIGHT - 2),
         ]
+        self._clear_enemy_spawn_area(enemy_spawns)
+
+         # Enemy'leri oluştur ve listeye ekle
 
         self.enemies.append(
             Enemy(
@@ -413,6 +415,22 @@ class World:
                 return False
             
         return True
+    
+    # world.py içinde (World class)
+
+    def _clear_enemy_spawn_area(self, spawns: list[tuple[int, int]]) -> None:
+        offsets = [(0,0), (1,0), (-1,0), (0,1), (0,-1)]
+        for sx, sy in spawns:
+            for dx, dy in offsets:
+                gx, gy = sx + dx, sy + dy
+                w = self._get_wall_at(gx, gy)
+                if w is None:
+                    continue
+            # UNBREAKABLE hariç (HARD/BREAKABLE) temizle
+                if getattr(w, "wall_type", None) != WallType.UNBREAKABLE:
+                    if w in self.walls:
+                        self.walls.remove(w)
+
 
    
     

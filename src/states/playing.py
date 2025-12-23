@@ -1,3 +1,5 @@
+# src/states/playing.py
+
 from __future__ import annotations
 import pygame
 from typing import TYPE_CHECKING
@@ -20,6 +22,10 @@ class PlayingState(GameState):
         self.command_invoker = CommandInvoker()
         self.debug_font = pygame.font.SysFont("Arial", 24, bold=True)
 
+        # snapshot anim yönleri için
+        self._prev_pos = {}  # pid -> (x,y)
+        self._prev_enemy_pos = []  # index -> (x,y)  (snapshot sırası)
+
     def enter(self):
         print("[PlayingState] enter")
         self.world = self.game.world
@@ -31,7 +37,6 @@ class PlayingState(GameState):
         self.game.sound.stop_music()
 
     def handle_event(self, event: pygame.event.Event):
-        # client: input'u server'a yolla
         mode = getattr(self.game, "mode", "local")
 
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -39,15 +44,17 @@ class PlayingState(GameState):
             self.game.set_state(PausedState(self.game, self))
             return
 
+        # client: input'u server'a yolla
         if mode == "client":
             if self.game.net_proxy is not None:
                 self.game.net_proxy.handle_event(event)
             return
 
+        # server: local klavye almaz
         if mode == "server":
-            return  # server local klavye almaz
+            return
 
-        # local (eski command pattern)
+        # local (Command pattern)
         cmd = self.command_mapper.map_event(event, self.world)
         if cmd is not None:
             self.command_invoker.execute(cmd)
@@ -103,7 +110,7 @@ class PlayingState(GameState):
         if mode == "client" and self.game.client is not None:
             snap = self.game.client.get_snapshot()
             if snap:
-                print("[Client] snapshot received:")
+                # print("[Client] snapshot received")
                 self._apply_snapshot(snap)
             return
 
@@ -115,7 +122,7 @@ class PlayingState(GameState):
             self.game.set_state(GameOverState(self.game))
 
     def render(self, surface: pygame.Surface):
-        # server headless ise render etme (istersen tamamen kapat)
+        # server headless ise render etme
         if getattr(self.game, "mode", "local") == "server":
             return
 
@@ -152,40 +159,42 @@ class PlayingState(GameState):
                 if not getattr(b, "exploded", False)
             ],
             "enemies": [
-                {"x": int(e.rect.x), "y": int(e.rect.y), "type": int(getattr(e, "enemy_type", 1))}
+                {"x": int(e.rect.x), "y": int(e.rect.y),
+                 "type": int(getattr(e, "enemy_type", 1))}
                 for e in getattr(self.world, "enemies", [])
             ],
             "walls": [
-                {"gx": int(w.rect.x // ts), "gy": int(w.rect.y // ts),
-                 "type": str(getattr(w, "wall_type", "")), "hp": int(getattr(w, "hp", 1))}
+                {
+                    "gx": int(w.rect.x // ts),
+                    "gy": int(w.rect.y // ts),
+                    "type": str(getattr(w, "wall_type", "")),
+                    "hp": int(getattr(w, "hp", 1)),
+                }
                 for w in getattr(self.world, "walls", [])
             ],
             "powerups": [
                 {
-                    "x": int(pu.rect.x), 
+                    "x": int(pu.rect.x),
                     "y": int(pu.rect.y),
-                    "kind": str(getattr(pu, "powerup_type", ""))
-                    }
-                
+                    "kind": str(getattr(pu, "powerup_type", "")),
+                }
                 for pu in getattr(self.world, "powerups", [])
             ],
             "score": int(getattr(self.game, "score", 0)),
             "explosions": [
                 {"x": int(fx.rect.x), "y": int(fx.rect.y)}
                 for fx in getattr(self.world, "explosions_fx", [])
-                ],
-
+            ],
         }
+
     def _apply_snapshot(self, snap: dict) -> None:
-        import pygame
         from model.entities import ExplosionFX, WallType
+        from model.enemy import Enemy
+        from model.ai.move_strategies import RandomMoveStrategy
 
         ts = self.world.config.TILE_SIZE
 
-        # --- Player animasyonu için önceki pozisyonları tut ---
-        if not hasattr(self, "_prev_pos"):
-            self._prev_pos = {}  # pid -> (x,y)
-
+        # ---------------- PLAYERS ----------------
         for pid_str, pdata in snap.get("players", {}).items():
             pid = int(pid_str)
             p = self.world.players.get(pid)
@@ -196,18 +205,15 @@ class PlayingState(GameState):
             new_y = int(pdata["y"])
 
             prev = self._prev_pos.get(pid)
-            dx = 0
-            dy = 0
-            if prev is not None:
-                dx = new_x - prev[0]
-                dy = new_y - prev[1]
+            dx = (new_x - prev[0]) if prev is not None else 0
+            dy = (new_y - prev[1]) if prev is not None else 0
 
             p.rect.x = new_x
             p.rect.y = new_y
             p.alive = bool(pdata.get("alive", True))
             p.hp = int(pdata.get("hp", getattr(p, "hp", 0)))
 
-            # Basit yürüyüş yönü
+            # Basit yürüyüş yönü (anim)
             if hasattr(p, "move_dir"):
                 if dx == 0 and dy == 0:
                     p.move_dir.x = 0
@@ -225,7 +231,7 @@ class PlayingState(GameState):
 
             self._prev_pos[pid] = (new_x, new_y)
 
-        # --- WALLS: snapshot'tan gerçek Wall objelerine map'le ---
+        # ---------------- WALLS ----------------
         def _parse_wall_type(s: str) -> WallType:
             s = (s or "").upper()
             if "UNBREAKABLE" in s:
@@ -250,7 +256,8 @@ class PlayingState(GameState):
 
             obj = wall_map.get(key)
             if obj is None or getattr(obj, "wall_type", None) != wt:
-                obj = self.world.factory.create("wall", x=gx, y=gy, wall_type=wt)
+                obj = self.world.factory.create(
+                    "wall", x=gx, y=gy, wall_type=wt)
                 wall_map[key] = obj
 
             if hasattr(obj, "hp"):
@@ -262,19 +269,82 @@ class PlayingState(GameState):
 
         self.world.walls = list(wall_map.values())
 
-        # --- Net listeleri ---
-        self.world._net_bombs = snap.get("bombs", [])
-        self.world._net_enemies = snap.get("enemies", [])
-        self.world._net_powerups = snap.get("powerups", [])
-        self.game.score = int(snap.get("score", getattr(self.game, "score", 0)))
+        # ---------------- ENEMIES (KRİTİK DÜZELTME) ----------------
+        enemies_data = snap.get("enemies", [])
 
-        # --- Explosions: pixel coords ile FX ---
+        # İlk kez: client world'deki mevcut enemy objelerini baz al (varsa)
+        if not hasattr(self.world, "_net_enemy_objs"):
+            self.world._net_enemy_objs = list(
+                getattr(self.world, "enemies", []))
+
+        objs: list[Enemy] = self.world._net_enemy_objs
+
+        # obj sayısını snapshot'a eşitle
+        while len(objs) < len(enemies_data):
+            objs.append(
+                Enemy(0, 0, ts, strategy=RandomMoveStrategy(), enemy_type=1))
+        if len(objs) > len(enemies_data):
+            del objs[len(enemies_data):]
+
+        # prev listesi eşitle
+        if len(self._prev_enemy_pos) < len(enemies_data):
+            self._prev_enemy_pos.extend(
+                [None] * (len(enemies_data) - len(self._prev_enemy_pos)))
+        if len(self._prev_enemy_pos) > len(enemies_data):
+            self._prev_enemy_pos = self._prev_enemy_pos[:len(enemies_data)]
+
+        for i, ed in enumerate(enemies_data):
+            obj = objs[i]
+
+            new_x = int(ed["x"])
+            new_y = int(ed["y"])
+            etype = int(ed.get("type", 1))
+
+            prev = self._prev_enemy_pos[i]
+            dx = (new_x - prev[0]) if prev is not None else 0
+            dy = (new_y - prev[1]) if prev is not None else 0
+
+            obj.rect.x = new_x
+            obj.rect.y = new_y
+            obj.enemy_type = etype
+
+            # anim yönü için (Enemy.draw -> _moving + _last_dir kullanıyor)
+            moving = (dx != 0 or dy != 0)
+            obj._moving = moving  # Enemy sınıfındaki internal flag
+
+            if moving:
+                if abs(dx) >= abs(dy):
+                    obj._last_dir = (1, 0) if dx > 0 else (-1, 0)
+                else:
+                    obj._last_dir = (0, 1) if dy > 0 else (0, -1)
+
+            # olası “yarım step” görsel hatasını engelle
+            obj._target_px = obj.rect.topleft
+
+            self._prev_enemy_pos[i] = (new_x, new_y)
+
+        # Renderer artık gerçek objeleri çizecek
+        self.world.enemies = objs
+
+        # ---------------- NET LISTS ----------------
+        self.world._net_bombs = snap.get("bombs", [])
+        self.world._net_powerups = snap.get("powerups", [])
+        self.game.score = int(
+            snap.get("score", getattr(self.game, "score", 0)))
+
+        # debug amaçlı tutmak istersen:
+        self.world._net_enemies = enemies_data
+
+        # ---------------- EXPLOSIONS FX ----------------
         if not hasattr(self.world, "_net_expl_seen"):
             self.world._net_expl_seen = set()
 
-        self.world.explosions_fx = [fx for fx in self.world.explosions_fx if fx.alive()]
+        # ölü fx'leri temizle
+        self.world.explosions_fx = [
+            fx for fx in self.world.explosions_fx if fx.alive()]
 
-        alive_keys = {(fx.rect.x, fx.rect.y) for fx in self.world.explosions_fx}
+        alive_keys = {(fx.rect.x, fx.rect.y)
+                      for fx in self.world.explosions_fx}
         self.world._net_expl_seen = set(alive_keys)
 
         for e in snap.get("explosions", []):
