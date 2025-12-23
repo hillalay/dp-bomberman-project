@@ -36,6 +36,21 @@ class GameConfig:
         self.MAX_BOMBS = 3
         self.BOMB_POWER=2 #Patlama menzili(tile sayısı)
         self.BOMB_DAMAGE=1 #Oyuncuya verilen hasar
+        
+        # --- PowerUp ayarları ---
+        self.POWERUP_SPAWN_CHANCE = 0.07        # %7 (0.35 çok fazlaydı)
+        self.MAX_POWERUPS_ON_MAP = 6            # haritada aynı anda max 6 tane (opsiyonel ama öneririm)
+
+        # Tür ağırlıkları (toplamı 1 olmak zorunda değil)
+       # Speed'i daha nadir yaptım.
+        self.POWERUP_TYPE_WEIGHTS = {
+            "BOMB_COUNT": 0.45,
+            "BOMB_POWER": 0.40,
+            "SPEED": 0.15,
+            }
+
+# Görsel küçültme (0.55 = tile’ın %55’i kadar çiz)
+        self.POWERUP_DRAW_SCALE = 0.45
 
         # -------------------------
         # Aktif tema

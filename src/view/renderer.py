@@ -45,10 +45,34 @@ class Renderer:
                 pu.draw(self.screen)
         # Client: _net_powerups ham liste (şimdilik basit kutu)
         elif hasattr(world, "_net_powerups"):
+            scale = float(getattr(self.config, "POWERUP_DRAW_SCALE", 0.45))
+            size = max(8, int(ts * scale))
+            
             for pu in world._net_powerups:
-                r = pygame.Rect(int(pu["x"]), int(pu["y"]), ts, ts)
-                pygame.draw.rect(self.screen, (80, 200, 80), r)
+                if "x" in pu and "y" in pu:
+                    px = int(pu["x"])
+                    py = int(pu["y"])
+                    cx = px + ts // 2
+                    cy = py + ts // 2
+                else:
+                    gx = int(pu.get("gx", 0))
+                    gy = int(pu.get("gy", 0))
+                    cx = gx * ts + ts // 2
+                    cy = gy * ts + ts // 2
+                    # türüne göre renk (opsiyonel ama güzel olur)
+                k = (pu.get("kind") or "").upper()
+                if "BOMB_COUNT" in k:
+                    color = (80, 200, 255)
+                elif "BOMB_POWER" in k:
+                    color = (255, 180, 80)
+                elif "SPEED" in k:
+                    color = (150, 255, 150)
+                else:
+                    color = (80, 200, 80)
 
+                r = pygame.Rect(0, 0, size, size)
+                r.center = (cx, cy)
+                pygame.draw.rect(self.screen, color, r)
         # 5) Enemies
         if getattr(world, "enemies", None):
             for e in world.enemies:

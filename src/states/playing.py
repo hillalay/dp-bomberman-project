@@ -174,12 +174,13 @@ class PlayingState(GameState):
             ],
             "powerups": [
                 {
-                    "x": int(pu.rect.x),
-                    "y": int(pu.rect.y),
-                    "kind": str(getattr(pu, "powerup_type", "")),
+                    "gx": int(pu.rect.centerx // ts),
+                    "gy": int(pu.rect.centery // ts),
+                    "kind":getattr(getattr(pu, "kind", None), "name", str(getattr(pu, "kind", ""))),
                 }
                 for pu in getattr(self.world, "powerups", [])
             ],
+            
             "score": int(getattr(self.game, "score", 0)),
             "explosions": [
                 {"x": int(fx.rect.x), "y": int(fx.rect.y)}

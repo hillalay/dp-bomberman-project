@@ -364,10 +364,12 @@ class World:
                 if getattr(wall, "wall_type", None) == WallType.BREAKABLE:
                     if hasattr(self.config, "game"):
                         self.config.game.score += 10
-                    pu = self.powerup_factory.maybe_spawn(wx, wy)
-                    if pu is not None:
-                        self.powerups.append(pu)
-
+                    max_pu=int(getattr(self.config,"MAX_POWERUPS_ON_MAP",9999))
+                    if len(self.powerups) < max_pu:
+                        pu=self.powerup_factory.maybe_spawn(wx, wy)
+                        if pu is not None:
+                            self.powerups.append(pu)
+                            
             # --- Bombayı listeden sil ---
             if bomb in self.bombs:
                 self.bombs.remove(bomb)

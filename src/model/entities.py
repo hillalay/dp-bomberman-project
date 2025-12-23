@@ -743,4 +743,11 @@ class PowerUp(Entity):
              print("[ERROR] POWERUP_PICKED event sırasında hata:", repr(e))
 
     def draw(self, s):
-        pygame.draw.rect(s, self.color, self.rect)
+        scale=float(getattr(self.config,"POWERUP_DRAW_SCALE",0.45))
+        ts=self.config.TILE_SIZE
+        size=max(8,int(ts*scale))
+        
+        r=pygame.Rect(0,0,size,size)
+        r.center=self.rect.center
+        pygame.draw.rect(s, self.color, r)
+        
