@@ -21,6 +21,9 @@ class GameOverState(GameState):
         print("[GameOverState] DB:", DB_PATH)
 
         user_id = getattr(self.game, "current_user_id", None)
+        if user_id is None:
+            user_id = getattr(self.game, "active_user_id", None)
+
         print("[GameOverState] current_user_id:", user_id)
 
         score = getattr(self.game, "score", None)
@@ -63,6 +66,7 @@ class GameOverState(GameState):
         pass
 
     def render(self, surface: pygame.Surface):
+        print("[GameOverState] render")
         surface.fill((10, 10, 14))
         w, h = surface.get_size()
 
@@ -70,7 +74,6 @@ class GameOverState(GameState):
         surface.blit(title, title.get_rect(center=(w // 2, h // 3)))
 
         lines = [
-            "You were killed by an explosion!",
             "",
             "Press R to Restart",
             "Press M or ESC to return to Menu",

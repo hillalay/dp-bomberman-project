@@ -159,27 +159,31 @@ class Player(Entity):
         self.invincible = True
         self.inv_timer = self.inv_duration
 
-        if self.hp <=0:
-            self.alive=False
+        if self.hp <= 0:
+            self.alive = False
+            self.invincible = False
+            self.inv_timer = 0.0
+            self.invuln_time = 0.0
             print("[Player] DEAD")
 
 
     def update(self, dt, world):
-        if not self.alive:
-            self.moving = False
-            self.move_dir.update(0, 0)
-            return
-        # --- invincibility timer ---
+        # --- invincibility timer (alive olmasa bile düşsün) ---
         if self.invincible:
             self.inv_timer -= dt
             if self.inv_timer <= 0:
                 self.invincible = False
 
-        # --- opsiyonel invuln_time (istersen bunu tamamen kaldırabilirsin) ---
         if self.invuln_time > 0:
             self.invuln_time -= dt
             if self.invuln_time < 0:
                 self.invuln_time = 0
+
+        # sonra alive check
+        if not self.alive:
+            self.moving = False
+            self.move_dir.update(0, 0)
+            return
 
         # state update
         if self.state is not None:

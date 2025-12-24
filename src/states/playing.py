@@ -3,10 +3,13 @@
 from __future__ import annotations
 import pygame
 from typing import TYPE_CHECKING
-
+from states.game_over import GameOverState
 from states.base import GameState
 from controller.command_mapper import CommandMapper
 from controller.command_invoker import CommandInvoker
+from model.entities import ExplosionFX, WallType
+from model.enemy import Enemy
+from model.ai.move_strategies import RandomMoveStrategy
 
 if TYPE_CHECKING:
     from core.game import Game
@@ -95,31 +98,57 @@ class PlayingState(GameState):
             # fizik sadece server'da
             self.world.update(dt)
 
-            # gameover kontrolü
-            if hasattr(self.world, "players") and all((not p.alive) for p in self.world.players.values()):
+            alive = self.world.alive_player_count()
+
+            if alive == 0:
+                # ✅ client'lara son snapshot (game_over=True) gönder
+                snap = self._make_snapshot()
+                snap["game_over"] = True
+                self.game.server.broadcast({"type": "SNAPSHOT", "data": snap})
+
                 from states.game_over import GameOverState
                 self.game.set_state(GameOverState(self.game))
                 return
 
             # snapshot her frame
             snap = self._make_snapshot()
+            snap["game_over"] = False  # opsiyonel ama netlik iyi
             self.game.server.broadcast({"type": "SNAPSHOT", "data": snap})
             return
+
 
         # ---------------- CLIENT ----------------
         if mode == "client" and self.game.client is not None:
             snap = self.game.client.get_snapshot()
             if snap:
-                # print("[Client] snapshot received")
                 self._apply_snapshot(snap)
+
+                # DEBUG
+                print("[CLIENT] game_over =", snap.get("game_over"))
+
+                if snap.get("game_over"):
+                    print("[CLIENT] SWITCHING TO GAME OVER")
+                    from states.game_over import GameOverState
+                    self.game.set_state(GameOverState(self.game))
+                    return
             return
+
+
+
+
 
         # ---------------- LOCAL ----------------
         self.world.update(dt)
 
-        if hasattr(self.world, "players") and all((not p.alive) for p in self.world.players.values()):
+        alive = self.world.alive_player_count()
+        print("[DEBUG] alive_count =", alive)
+
+        # ✅ TEK GAMEOVER KONTROLÜ (local)
+        if alive == 0:
             from states.game_over import GameOverState
-            self.game.set_state(GameOverState(self.game))
+            self.game.set_state(GameOverState(self.game))       # ✅ set_state
+            return
+
 
     def render(self, surface: pygame.Surface):
         # server headless ise render etme
@@ -143,13 +172,17 @@ class PlayingState(GameState):
 
     def _make_snapshot(self) -> dict:
         ts = self.world.config.TILE_SIZE
-        return {
+
+        snap = {
             "players": {
                 str(pid): {
                     "x": int(p.rect.x),
                     "y": int(p.rect.y),
                     "alive": bool(getattr(p, "alive", True)),
                     "hp": int(getattr(p, "hp", 0)),
+                    # blink için istersen şimdiden ekle:
+                    "invincible": bool(getattr(p, "invincible", False)),
+                    "inv_timer": float(getattr(p, "inv_timer", 0.0)),
                 }
                 for pid, p in self.world.players.items()
             },
@@ -160,7 +193,7 @@ class PlayingState(GameState):
             ],
             "enemies": [
                 {"x": int(e.rect.x), "y": int(e.rect.y),
-                 "type": int(getattr(e, "enemy_type", 1))}
+                "type": int(getattr(e, "enemy_type", 1))}
                 for e in getattr(self.world, "enemies", [])
             ],
             "walls": [
@@ -176,11 +209,11 @@ class PlayingState(GameState):
                 {
                     "gx": int(pu.rect.centerx // ts),
                     "gy": int(pu.rect.centery // ts),
-                    "kind":getattr(getattr(pu, "kind", None), "name", str(getattr(pu, "kind", ""))),
+                    "kind": getattr(getattr(pu, "kind", None), "name",
+                                    str(getattr(pu, "kind", ""))),
                 }
                 for pu in getattr(self.world, "powerups", [])
             ],
-            
             "score": int(getattr(self.game, "score", 0)),
             "explosions": [
                 {"x": int(fx.rect.x), "y": int(fx.rect.y)}
@@ -188,11 +221,15 @@ class PlayingState(GameState):
             ],
         }
 
-    def _apply_snapshot(self, snap: dict) -> None:
-        from model.entities import ExplosionFX, WallType
-        from model.enemy import Enemy
-        from model.ai.move_strategies import RandomMoveStrategy
+        # ✅ gameover flag (client bununla state değiştirecek)
+        snap["game_over"] = (self.world.alive_player_count() == 0)
 
+        return snap
+
+
+    
+
+    def _apply_snapshot(self, snap: dict) -> None:
         ts = self.world.config.TILE_SIZE
 
         # ---------------- PLAYERS ----------------
@@ -213,6 +250,10 @@ class PlayingState(GameState):
             p.rect.y = new_y
             p.alive = bool(pdata.get("alive", True))
             p.hp = int(pdata.get("hp", getattr(p, "hp", 0)))
+
+            p.invincible = bool(pdata.get("invincible", getattr(p, "invincible", False)))
+            p.inv_timer = float(pdata.get("inv_timer", getattr(p, "inv_timer", 0.0)))
+
 
             # Basit yürüyüş yönü (anim)
             if hasattr(p, "move_dir"):
@@ -356,3 +397,6 @@ class PlayingState(GameState):
                 continue
             self.world.explosions_fx.append(ExplosionFX(x, y, ts))
             self.world._net_expl_seen.add(key)
+
+        
+

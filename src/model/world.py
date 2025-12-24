@@ -279,13 +279,17 @@ class World:
 
             destroyed_walls = []
 
-        # Patlama alanını SET olarak tut (duvar bloklaması sonrası gerçek alan)
-            blast_tiles = set(tiles) if tiles else set()
-            blast_tiles.add((gx, gy))  # merkez her zaman etkilenir
+        # tiles None gelirse patlamasın
+            tiles_list = list(tiles) if tiles else []
 
-            ts = self.config.TILE_SIZE
+            blast_tiles = set(tiles_list)
+            blast_tiles.add((gx, gy))
+
+            # FX: sadece blast_tiles üzerinden bas
             for (tx, ty) in blast_tiles:
                 self.explosions_fx.append(ExplosionFX(tx * ts, ty * ts, ts))
+
+            
 
 
         # --- Merkez tile'da duvar varsa önce onu kontrol et ---
@@ -389,7 +393,7 @@ class World:
 
                     if died:
                         if e in self.enemies:
-                            elf.enemies.remove(e)
+                            self.enemies.remove(e)
 
                         # skor (istersen type'a göre değiştir)
                         if hasattr(self.config, "game"):
@@ -455,6 +459,18 @@ class World:
                 if getattr(w, "wall_type", None) != WallType.UNBREAKABLE:
                     if w in self.walls:
                         self.walls.remove(w)
+
+
+    def iter_players(self):
+        ps = getattr(self, "players", None)
+        if ps is None:
+            return []
+        if isinstance(ps, dict):
+            return list(ps.values())
+        return list(ps)
+
+    def alive_player_count(self) -> int:
+        return sum(1 for p in self.iter_players() if getattr(p, "alive", False))
 
 
    

@@ -5,7 +5,6 @@ from __future__ import annotations
 import pygame
 import os
 from typing import TYPE_CHECKING
-
 from core.config import GameConfig
 from model.world import World
 from view.renderer import Renderer
