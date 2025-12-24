@@ -56,8 +56,19 @@ class ScoresRepo:
                 SELECT u.username, s.score, s.won, s.played_at
                 FROM scores s
                 JOIN users u ON u.id = s.user_id
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM scores s2
+                    WHERE s2.user_id = s.user_id
+                    AND (
+                        s2.score > s.score
+                        OR(s2.score = s.score AND s2.played_at < s.played_at)
+                        OR(s2.score = s.score AND s2.played_at = s.played_at AND s2.id < s.id)
+                    )
+                )
                 ORDER BY s.score DESC, s.played_at ASC
                 LIMIT ?
+                
                 """,
                 (int(limit),),
             )

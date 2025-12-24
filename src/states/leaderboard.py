@@ -56,10 +56,21 @@ class LeaderboardState(GameState):
 
     def enter(self) -> None:
         print("[LeaderboardState] enter")
+        from data.db import DB_PATH,get_connection
+        with get_connection() as conn:
+            cnt=conn.execute("SELECT COUNT(*) FROM scores").fetchone()[0]
+            print("[LeaderboardState] DB_PATH =", DB_PATH)
+            print("[LeaderboardState] scores count =", cnt)
         # DB'den çek
         try:
             self.entries = self.scores_repo.get_leaderboard(limit=10)
+            print("[LeaderboardState] entries =", len(self.entries))
+            if self.entries:
+                print("[LeaderboardState] first =", self.entries[0])
+                
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print("[LeaderboardState] leaderboard yüklenemedi:", repr(e))
             self.entries = []
 
