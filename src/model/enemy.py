@@ -44,6 +44,12 @@ class Enemy:
         self._rethink_timer = 0.0
         # tile süresine yakın aralık: bekleme hissini azaltır
         self._rethink_interval = 1.0 / max(1e-6, self.speed_tiles)
+                # --- Combat ---
+        # type 1: tek vuruş
+        # type 2: biraz daha dayanıklı (istersen 1 yap)
+        self.hp = 1 if self.enemy_type == 1 else 2
+        self.alive = True
+
 
     # ---------- Grid helpers ----------
     def grid_pos(self) -> tuple[int, int]:
@@ -117,6 +123,20 @@ class Enemy:
         if dy == -1:
             return "b"
         return "f"
+
+
+    def take_damage(self, dmg: int = 1) -> bool:
+        """
+        Returns True if enemy died.
+        """
+        if not self.alive:
+            return True
+        self.hp -= dmg
+        if self.hp <= 0:
+            self.hp = 0
+            self.alive = False
+            return True
+        return False
 
     # ---------- Main loop ----------
     def update(self, dt: float, world) -> None:

@@ -374,6 +374,29 @@ class World:
             if bomb in self.bombs:
                 self.bombs.remove(bomb)
 
+
+    # -------------------------
+    # 💀 ENEMY HIT CHECK (explosion kills enemies)
+    # -------------------------
+            ts = self.config.TILE_SIZE
+
+            for e in list(self.enemies):
+                ex = e.rect.centerx // ts
+                ey = e.rect.centery // ts
+
+                if (ex, ey) in blast_tiles:
+                    died = e.take_damage(1) if hasattr(e, "take_damage") else True
+
+                    if died:
+                        if e in self.enemies:
+                            elf.enemies.remove(e)
+
+                        # skor (istersen type'a göre değiştir)
+                        if hasattr(self.config, "game"):
+                            bonus = 50 if getattr(e, "enemy_type", 1) == 1 else 80
+                            self.config.game.score += bonus
+
+
     # -------------------------
     # 💥 PLAYER HIT CHECK
     # -------------------------
