@@ -24,7 +24,7 @@ class Enemy:
         x: int,
         y: int,
         tile_size: int,
-        speed: float = 7.0,
+        speed: float = 5.0,
         strategy: Optional[IMoveStrategy] = None,
         enemy_type: int = 1,   # 👈 e1 / e2
     ):
