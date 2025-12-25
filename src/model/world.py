@@ -204,11 +204,6 @@ class World:
                         self.powerups.remove(pu)
                         break
 
-         # WIN: kırılabilir duvar kalmadıysa
-        breakable_left = any(getattr(w, "wall_type", None) == WallType.BREAKABLE for w in self.walls)
-        if not breakable_left and hasattr(self.config, "game"):
-                self.config.game.on_win()
-
 
     def draw(self, s):
         moving = getattr(self, "moving", False)
@@ -473,5 +468,10 @@ class World:
         return sum(1 for p in self.iter_players() if getattr(p, "alive", False))
 
 
-   
+    def breakable_wall_count(self) -> int:
+        return sum(
+            1 for w in self.walls
+            if getattr(w, "wall_type", None) == WallType.BREAKABLE
+        )
+
     

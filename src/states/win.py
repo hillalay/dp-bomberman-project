@@ -1,3 +1,4 @@
+# src/states/win.py
 from __future__ import annotations
 import pygame
 from typing import TYPE_CHECKING
@@ -17,6 +18,11 @@ class WinState(GameState):
 
     def enter(self):
         print("[WinState] enter")
+        if getattr(self.game, "mode", "") == "server" and self.game.server:
+            snap = self.game.current_state._make_snapshot() if hasattr(self.game.current_state, "_make_snapshot") else {}
+            snap["win"] = True
+            for _ in range(10):
+                self.game.server.broadcast({"type": "SNAPSHOT", "data": snap})
 
         user_id = getattr(self.game, "current_user_id", None) or getattr(self.game, "active_user_id", None)
         score = getattr(self.game, "score", 0)

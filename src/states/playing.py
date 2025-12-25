@@ -5,6 +5,7 @@ import pygame
 from typing import TYPE_CHECKING
 from states.game_over import GameOverState
 from states.base import GameState
+from states.paused import PausedState
 from controller.command_mapper import CommandMapper
 from controller.command_invoker import CommandInvoker
 from model.entities import ExplosionFX, WallType
@@ -43,7 +44,6 @@ class PlayingState(GameState):
         mode = getattr(self.game, "mode", "local")
 
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            from states.paused import PausedState
             self.game.set_state(PausedState(self.game, self))
             return
 
@@ -97,6 +97,21 @@ class PlayingState(GameState):
 
             # fizik sadece server'da
             self.world.update(dt)
+            alive_players = self.world.alive_player_count()
+            remaining_breakable = self.world.breakable_wall_count()
+
+            if remaining_breakable == 0 and alive_players > 0:
+                snap = self._make_snapshot()
+                snap["win"] = True
+                snap["game_over"] = False
+
+                # ✅ 1 kere değil, garanti olsun diye birkaç kere gönder
+                for _ in range(5):
+                    self.game.server.broadcast({"type": "SNAPSHOT", "data": snap})
+
+                from states.win import WinState
+                self.game.set_state(WinState(self.game))
+                return
 
             alive = self.world.alive_player_count()
 
@@ -123,6 +138,12 @@ class PlayingState(GameState):
             if snap:
                 self._apply_snapshot(snap)
 
+                if snap.get("win"):
+                    from states.win import WinState
+                    self.game.set_state(WinState(self.game))
+                    return
+
+                print("[CLIENT] snap win=", snap.get("win"), "game_over=", snap.get("game_over"))
                 # DEBUG
                 print("[CLIENT] game_over =", snap.get("game_over"))
 
@@ -145,7 +166,6 @@ class PlayingState(GameState):
 
         # ✅ TEK GAMEOVER KONTROLÜ (local)
         if alive == 0:
-            from states.game_over import GameOverState
             self.game.set_state(GameOverState(self.game))       # ✅ set_state
             return
 
@@ -223,7 +243,8 @@ class PlayingState(GameState):
 
         # ✅ gameover flag (client bununla state değiştirecek)
         snap["game_over"] = (self.world.alive_player_count() == 0)
-
+        snap.setdefault("game_over", False)
+        snap.setdefault("win", False)
         return snap
 
 
